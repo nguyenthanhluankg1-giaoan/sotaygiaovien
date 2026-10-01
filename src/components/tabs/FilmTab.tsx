@@ -753,7 +753,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     }
   };
 
-  // Verify entered 3-digit PIN to join team (with instant multi-room lookup & cloud sync)
+  // Verify entered 3-digit PIN to join team (with instant local check & resilient offline/online sync)
   const handleVerifyPin = async (pinToTest?: string) => {
     const targetPin = (pinToTest !== undefined ? pinToTest : inputPin).trim();
     setPinError(null);
@@ -768,22 +768,35 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     let matchedRoomId = activeRoomDocId || roomDocId;
     let matchedData: any = null;
 
-    try {
-      // 1. Check current bound room
-      const currentSnap = await getDoc(doc(db, 'tug_of_war_rooms', matchedRoomId));
-      if (currentSnap.exists()) {
-        const data = currentSnap.data();
-        if (data && String(data.redPin) === targetPin) {
-          matchedTeam = 'red';
-          matchedData = data;
-        } else if (data && String(data.bluePin) === targetPin) {
-          matchedTeam = 'blue';
-          matchedData = data;
-        }
-      }
+    // Fast Check 1: Instant local state match (Zero latency / Offline resilient)
+    if (targetPin === redPin) {
+      matchedTeam = 'red';
+    } else if (targetPin === bluePin) {
+      matchedTeam = 'blue';
+    }
 
-      // 2. Fallback check tug_room_active
-      if (!matchedTeam) {
+    // Check 2: Query current bound room safely
+    if (!matchedTeam) {
+      try {
+        const currentSnap = await getDoc(doc(db, 'tug_of_war_rooms', matchedRoomId));
+        if (currentSnap.exists()) {
+          const data = currentSnap.data();
+          if (data && String(data.redPin) === targetPin) {
+            matchedTeam = 'red';
+            matchedData = data;
+          } else if (data && String(data.bluePin) === targetPin) {
+            matchedTeam = 'blue';
+            matchedData = data;
+          }
+        }
+      } catch (err) {
+        console.warn('Check current room error:', err);
+      }
+    }
+
+    // Check 3: Query active room safely
+    if (!matchedTeam) {
+      try {
         const activeSnap = await getDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'));
         if (activeSnap.exists()) {
           const data = activeSnap.data();
@@ -797,10 +810,14 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             matchedData = data;
           }
         }
+      } catch (err) {
+        console.warn('Check active room error:', err);
       }
+    }
 
-      // 3. Fallback search all rooms in tug_of_war_rooms collection
-      if (!matchedTeam) {
+    // Check 4: Query all rooms collection safely
+    if (!matchedTeam) {
+      try {
         const roomsQuery = query(collection(db, 'tug_of_war_rooms'));
         const querySnap = await getDocs(roomsQuery);
         querySnap.forEach((docSnap) => {
@@ -817,70 +834,48 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             }
           }
         });
+      } catch (err) {
+        console.warn('Query rooms collection error:', err);
       }
-
-      // 4. Fallback check local state
-      if (!matchedTeam) {
-        if (targetPin === redPin) {
-          matchedTeam = 'red';
-        } else if (targetPin === bluePin) {
-          matchedTeam = 'blue';
-        }
-      }
-
-      if (matchedTeam) {
-        setActiveRoomDocId(matchedRoomId);
-        setDeviceTeam(matchedTeam);
-
-        if (matchedData) {
-          if (matchedData.redPin) setRedPin(String(matchedData.redPin));
-          if (matchedData.bluePin) setBluePin(String(matchedData.bluePin));
-          if (typeof matchedData.isQuestionStarted === 'boolean') setIsQuestionStarted(matchedData.isQuestionStarted);
-          if (Array.isArray(matchedData.matchQuestions) && matchedData.matchQuestions.length > 0) setMatchQuestions(matchedData.matchQuestions);
-          if (typeof matchedData.redQuestionIdx === 'number') setRedQuestionIdx(matchedData.redQuestionIdx);
-          if (typeof matchedData.blueQuestionIdx === 'number') setBlueQuestionIdx(matchedData.blueQuestionIdx);
-          if (typeof matchedData.redScore === 'number') setRedScore(matchedData.redScore);
-          if (typeof matchedData.blueScore === 'number') setBlueScore(matchedData.blueScore);
-          if (typeof matchedData.redAnswerCount === 'number') setRedAnswerCount(matchedData.redAnswerCount);
-          if (typeof matchedData.blueAnswerCount === 'number') setBlueAnswerCount(matchedData.blueAnswerCount);
-          if (typeof matchedData.ropePosition === 'number') setRopePosition(matchedData.ropePosition);
-          if (matchedData.matchWinner !== undefined) setMatchWinner(matchedData.matchWinner);
-          if (matchedData.currentTurn) setCurrentTurn(matchedData.currentTurn);
-          if (matchedData.playFormat) setPlayFormat(matchedData.playFormat);
-        } else {
-          await fetchAndSyncActiveRoom();
-        }
-
-        const teamName = matchedTeam === 'red' ? 'Đội Đỏ 🔴' : 'Đội Xanh 🔵';
-        setPinSuccess(`🎉 Đúng mã ${teamName}! Tín hiệu thi đấu đã kết nối thành công!`);
-        if (soundEnabled) playCelebration();
-        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
-
-        setTimeout(() => {
-          setIsPinModalOpen(false);
-          setInputPin('');
-          setPinSuccess(null);
-        }, 500);
-        return;
-      }
-
-      setPinError('❌ Mã không chính xác! Vui lòng hỏi Thầy/Cô mã 3 chữ số của đội bạn.');
-      if (soundEnabled) playBeep(200, 0.3, 0.2);
-    } catch (e) {
-      console.warn('Verify PIN error:', e);
-      if (targetPin === redPin) {
-        setDeviceTeam('red');
-        setIsPinModalOpen(false);
-        setInputPin('');
-        return;
-      } else if (targetPin === bluePin) {
-        setDeviceTeam('blue');
-        setIsPinModalOpen(false);
-        setInputPin('');
-        return;
-      }
-      setPinError('❌ Lỗi kết nối mạng. Vui lòng thử lại!');
     }
+
+    // If matched either locally or via Firestore:
+    if (matchedTeam) {
+      setActiveRoomDocId(matchedRoomId);
+      setDeviceTeam(matchedTeam);
+
+      if (matchedData) {
+        if (matchedData.redPin) setRedPin(String(matchedData.redPin));
+        if (matchedData.bluePin) setBluePin(String(matchedData.bluePin));
+        if (typeof matchedData.isQuestionStarted === 'boolean') setIsQuestionStarted(matchedData.isQuestionStarted);
+        if (Array.isArray(matchedData.matchQuestions) && matchedData.matchQuestions.length > 0) setMatchQuestions(matchedData.matchQuestions);
+        if (typeof matchedData.redQuestionIdx === 'number') setRedQuestionIdx(matchedData.redQuestionIdx);
+        if (typeof matchedData.blueQuestionIdx === 'number') setBlueQuestionIdx(matchedData.blueQuestionIdx);
+        if (typeof matchedData.redScore === 'number') setRedScore(matchedData.redScore);
+        if (typeof matchedData.blueScore === 'number') setBlueScore(matchedData.blueScore);
+        if (typeof matchedData.redAnswerCount === 'number') setRedAnswerCount(matchedData.redAnswerCount);
+        if (typeof matchedData.blueAnswerCount === 'number') setBlueAnswerCount(matchedData.blueAnswerCount);
+        if (typeof matchedData.ropePosition === 'number') setRopePosition(matchedData.ropePosition);
+        if (matchedData.matchWinner !== undefined) setMatchWinner(matchedData.matchWinner);
+        if (matchedData.currentTurn) setCurrentTurn(matchedData.currentTurn);
+        if (matchedData.playFormat) setPlayFormat(matchedData.playFormat);
+      }
+
+      const teamName = matchedTeam === 'red' ? 'Đội Đỏ 🔴' : 'Đội Xanh 🔵';
+      setPinSuccess(`🎉 Đúng mã ${teamName}! Đã kết nối vào đội thành công!`);
+      if (soundEnabled) playCelebration();
+      confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+
+      setTimeout(() => {
+        setIsPinModalOpen(false);
+        setInputPin('');
+        setPinSuccess(null);
+      }, 500);
+      return;
+    }
+
+    setPinError(`❌ Mã [${targetPin}] không chính xác! Vui lòng xem lại mã 3 chữ số trên máy Thầy/Cô.`);
+    if (soundEnabled) playBeep(200, 0.3, 0.2);
   };
 
   // Option Highlight & Shared Speed Question Tracking
