@@ -113,7 +113,7 @@ const DEFAULT_TUG_QUESTIONS: QuizQuestion[] = [
 ];
 
 // Cartoon Tug of War Vector Stage matching elementary school drawing style
-const TugOfWarCartoonStage: React.FC<{
+export const TugOfWarCartoonStage: React.FC<{
   ropePosition: number;
   pullingTeamAnimation: 'red' | 'blue' | null;
   isFullscreen?: boolean;
@@ -979,10 +979,11 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       alert('🔒 Đây là máy Đội Xanh/Khán giả! Bạn không thể bấm chọn đáp án cho Đội Đỏ.');
       return;
     }
+    const isSpeedMode = playFormat === 'speed' || isCameraGestureEnabled;
     const targetCount = questionsPerMatch > 0 ? questionsPerMatch : 999;
     if (matchWinner || redAnswerCount >= targetCount || matchQuestions.length === 0) return;
-    if (playFormat === 'turns' && currentTurn !== 'red') return;
-    if (playFormat === 'speed' && (speedAttemptedRed || isAdvancingSpeedQuestion)) return;
+    if (playFormat === 'turns' && !isCameraGestureEnabled && currentTurn !== 'red') return;
+    if (isSpeedMode && (speedAttemptedRed || isAdvancingSpeedQuestion)) return;
 
     const currentQ = matchQuestions[redQuestionIdx];
     if (!currentQ) return;
@@ -1006,7 +1007,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       const nextCount = redAnswerCount + 1;
       setRedAnswerCount(nextCount);
 
-      if (playFormat === 'speed') {
+      if (isSpeedMode) {
         setBlueAnswerCount(nextCount);
         setIsAdvancingSpeedQuestion(true);
         broadcastRoomState({
@@ -1076,7 +1077,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         pullRope('blue', pullForcePenalty);
       }
 
-      if (playFormat === 'speed') {
+      if (isSpeedMode) {
         setSpeedAttemptedRed(true);
         let noticeText = `🔴 Đội Đỏ trả lời SAI (ô đỏ)! 🔵 Đội Xanh có quyền trả lời câu hỏi này!`;
         if (speedAttemptedBlue) {
@@ -1168,10 +1169,11 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       alert('🔒 Đây là máy Đội Đỏ/Khán giả! Bạn không thể bấm chọn đáp án cho Đội Xanh.');
       return;
     }
+    const isSpeedMode = playFormat === 'speed' || isCameraGestureEnabled;
     const targetCount = questionsPerMatch > 0 ? questionsPerMatch : 999;
     if (matchWinner || blueAnswerCount >= targetCount || matchQuestions.length === 0) return;
-    if (playFormat === 'turns' && currentTurn !== 'blue') return;
-    if (playFormat === 'speed' && (speedAttemptedBlue || isAdvancingSpeedQuestion)) return;
+    if (playFormat === 'turns' && !isCameraGestureEnabled && currentTurn !== 'blue') return;
+    if (isSpeedMode && (speedAttemptedBlue || isAdvancingSpeedQuestion)) return;
 
     const currentQ = matchQuestions[blueQuestionIdx];
     if (!currentQ) return;
@@ -1195,7 +1197,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       const nextCount = blueAnswerCount + 1;
       setBlueAnswerCount(nextCount);
 
-      if (playFormat === 'speed') {
+      if (isSpeedMode) {
         setRedAnswerCount(nextCount);
         setIsAdvancingSpeedQuestion(true);
 
@@ -1266,7 +1268,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         pullRope('red', pullForcePenalty);
       }
 
-      if (playFormat === 'speed') {
+      if (isSpeedMode) {
         setSpeedAttemptedBlue(true);
         let noticeText = `🔵 Đội Xanh trả lời SAI (hiện ô đỏ)! 🔴 Đội Đỏ có quyền trả lời câu hỏi này!`;
         if (speedAttemptedRed) {
@@ -1879,25 +1881,39 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
           </div>
         </div>
 
-        {/* AI CAMERA GESTURE RECOGNITION (DUAL ZONE) */}
-        <CameraGestureDualZone
-          isEnabled={isCameraGestureEnabled}
-          isQuestionStarted={isQuestionStarted}
-          playFormat={playFormat}
-          currentTurn={currentTurn}
-          matchWinner={matchWinner}
-          onRedAnswer={handleRedSelectAnswer}
-          onBlueAnswer={handleBlueSelectAnswer}
-          redSelectedOption={redSelectedOption}
-          blueSelectedOption={blueSelectedOption}
-          currentRedQuestionIdx={redQuestionIdx}
-          currentBlueQuestionIdx={blueQuestionIdx}
-          holdDurationMs={cameraHoldDuration}
-          onToggleCamera={() => setIsCameraGestureEnabled(false)}
-        />
-
-        {/* 2. 3-COLUMN MAIN ARENA (Ultra-Clear High-Contrast Fullscreen Scaling) */}
-        <div className={`relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-5 items-stretch ${isFullscreen ? 'flex-1 pt-3' : 'pt-2'}`}>
+        {/* 2. MAIN ARENA (Conditionally switches between Camera Gesture Dual Zone and Standard 3-Column Arena) */}
+        {isCameraGestureEnabled ? (
+          <CameraGestureDualZone
+            isEnabled={isCameraGestureEnabled}
+            isQuestionStarted={isQuestionStarted}
+            playFormat={playFormat}
+            currentTurn={currentTurn}
+            matchWinner={matchWinner}
+            onRedAnswer={handleRedSelectAnswer}
+            onBlueAnswer={handleBlueSelectAnswer}
+            redSelectedOption={redSelectedOption}
+            blueSelectedOption={blueSelectedOption}
+            currentRedQuestionIdx={redQuestionIdx}
+            currentBlueQuestionIdx={blueQuestionIdx}
+            holdDurationMs={cameraHoldDuration}
+            onToggleCamera={() => setIsCameraGestureEnabled(false)}
+            currentQuestion={matchQuestions[redQuestionIdx] || matchQuestions[0] || null}
+            redScore={redScore}
+            blueScore={blueScore}
+            redAnswerCount={redAnswerCount}
+            blueAnswerCount={blueAnswerCount}
+            questionsPerMatch={questionsPerMatch}
+            speedAttemptedRed={speedAttemptedRed}
+            speedAttemptedBlue={speedAttemptedBlue}
+            isAdvancingSpeedQuestion={isAdvancingSpeedQuestion}
+            ropePosition={ropePosition}
+            pullingTeamAnimation={pullingTeamAnimation}
+            scoreNotice={scoreNotice}
+            deviceTeam={deviceTeam}
+            isFullscreen={isFullscreen}
+          />
+        ) : (
+          <div className={`relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-5 items-stretch ${isFullscreen ? 'flex-1 pt-3' : 'pt-2'}`}>
 
           {/* ================= 🔵 LEFT COLUMN: ĐỘI XANH ================= */}
           <div className={`bg-gradient-to-b from-[#1e293b] to-[#0f172a] border-2 border-sky-500/60 rounded-3xl flex flex-col justify-between shadow-2xl space-y-4 ${
@@ -2264,6 +2280,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
           </div>
 
         </div>
+      )}
       </div>
 
       {/* GAME CONFIGURATION MODAL */}

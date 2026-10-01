@@ -1,6 +1,16 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, Sparkles, RefreshCw, CheckCircle2, Hand, Info, Minimize2, Maximize2, Zap, AlertCircle } from 'lucide-react';
+import { Camera, CameraOff, Sparkles, RefreshCw, CheckCircle2, Hand, Info, Minimize2, Maximize2, Zap, AlertCircle, Swords, Trophy, RotateCcw } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import { TugOfWarCartoonStage } from './FilmTab';
+
+export interface ActiveQuestionInfo {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation?: string;
+  subject?: string;
+}
 
 interface CameraGestureDualZoneProps {
   isEnabled: boolean;
@@ -16,9 +26,26 @@ interface CameraGestureDualZoneProps {
   currentBlueQuestionIdx: number;
   holdDurationMs?: number; // Time in ms to confirm gesture (default: 800ms)
   onToggleCamera: () => void;
+  // Question & Match Data for Full Camera Battle Mode
+  currentQuestion?: ActiveQuestionInfo | null;
+  redScore: number;
+  blueScore: number;
+  redAnswerCount: number;
+  blueAnswerCount: number;
+  questionsPerMatch: number;
+  speedAttemptedRed: boolean;
+  speedAttemptedBlue: boolean;
+  isAdvancingSpeedQuestion: boolean;
+  ropePosition: number;
+  pullingTeamAnimation: 'red' | 'blue' | null;
+  scoreNotice?: string | null;
+  deviceTeam?: 'teacher' | 'red' | 'blue' | 'view';
+  isFullscreen?: boolean;
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+const GESTURE_ICONS = ['👆', '✌️', '🤟', '🖖'];
+
 const GESTURE_EMOJIS: Record<number, string> = {
   1: '👆 1 Ngón (A)',
   2: '✌️ 2 Ngón (B)',
@@ -41,7 +68,21 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
   currentRedQuestionIdx,
   currentBlueQuestionIdx,
   holdDurationMs = 800,
-  onToggleCamera
+  onToggleCamera,
+  currentQuestion,
+  redScore,
+  blueScore,
+  redAnswerCount,
+  blueAnswerCount,
+  questionsPerMatch,
+  speedAttemptedRed,
+  speedAttemptedBlue,
+  isAdvancingSpeedQuestion,
+  ropePosition,
+  pullingTeamAnimation,
+  scoreNotice,
+  deviceTeam = 'teacher',
+  isFullscreen = false
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -106,12 +147,10 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     if (pinkyUp) count++;
 
     // Thumb check: Thumb tip (4) vs IP joint (3) and MCP (2)
-    // Distance between thumb tip and pinky base vs thumb IP and pinky base
     const thumbDistToPinky = Math.hypot(landmarks[4].x - landmarks[17].x, landmarks[4].y - landmarks[17].y);
     const thumbIpToPinky = Math.hypot(landmarks[3].x - landmarks[17].x, landmarks[3].y - landmarks[17].y);
     const thumbExtended = thumbDistToPinky > thumbIpToPinky * 1.15;
     
-    // Only count thumb if at least index is also up or when thumb is part of 3/5 fingers
     if (thumbExtended && (count >= 1 || landmarks[4].y < landmarks[2].y)) {
       count++;
     }
@@ -313,13 +352,13 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     ctx.setLineDash([]);
 
     // 4. Zone Headers on Canvas
-    ctx.font = 'bold 20px sans-serif';
+    ctx.font = 'bold 18px sans-serif';
     ctx.fillStyle = '#38bdf8';
-    ctx.fillText('🔵 ĐỘI XANH', 24, 38);
+    ctx.fillText('🔵 ĐỘI XANH', 20, 32);
 
-    ctx.font = 'bold 20px sans-serif';
+    ctx.font = 'bold 18px sans-serif';
     ctx.fillStyle = '#f87171';
-    ctx.fillText('🔴 ĐỘI ĐỎ', midX + 24, 38);
+    ctx.fillText('🔴 ĐỘI ĐỎ', midX + 20, 32);
 
     let detectedBlueFingers = 0;
     let detectedBlueOpt: number | null = null;
@@ -328,8 +367,6 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
 
     if (detections.landmarks && detections.landmarks.length > 0) {
       for (const landmarks of detections.landmarks) {
-        // Calculate wrist / palm center X coordinate
-        // Note: Video is mirrored horizontally via CSS, so we invert X for canvas drawing coordinates
         const avgX = (landmarks[0].x + landmarks[9].x) / 2;
         const mirroredX = 1 - avgX; // 0 (left) to 1 (right)
 
@@ -364,7 +401,6 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
         for (const [startIdx, endIdx] of connections) {
           const start = landmarks[startIdx];
           const end = landmarks[endIdx];
-          // Mirror X coordinates on Canvas
           const sx = (1 - start.x) * width;
           const sy = start.y * height;
           const ex = (1 - end.x) * width;
@@ -383,18 +419,18 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
           const py = pt.y * height;
 
           ctx.beginPath();
-          const radius = i === 4 || i === 8 || i === 12 || i === 16 || i === 20 ? 7 : 4;
+          const radius = i === 4 || i === 8 || i === 12 || i === 16 || i === 20 ? 6 : 3.5;
           ctx.arc(px, py, radius, 0, 2 * Math.PI);
           ctx.fill();
         }
 
         // Draw Hand Label on Canvas
         const wristX = (1 - landmarks[0].x) * width;
-        const wristY = Math.max(30, landmarks[0].y * height);
-        ctx.font = 'black 16px sans-serif';
+        const wristY = Math.max(28, landmarks[0].y * height);
+        ctx.font = 'bold 15px sans-serif';
         ctx.fillStyle = '#ffffff';
         const label = optIdx !== null ? `👉 Chọn ${OPTION_LETTERS[optIdx]}` : `${fingerCount} ngón`;
-        ctx.fillText(label, wristX - 30, wristY - 15);
+        ctx.fillText(label, wristX - 25, wristY - 12);
       }
     }
 
@@ -404,7 +440,16 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     const now = Date.now();
 
     // ==================== BLUE TEAM HOLD LOGIC ====================
-    const canBluePlay = isQuestionStarted && !matchWinner && !blueSelectedOption && (playFormat !== 'turns' || currentTurn === 'blue');
+    const canBluePlay =
+      isQuestionStarted &&
+      !matchWinner &&
+      !blueSelectedOption &&
+      !isAdvancingSpeedQuestion &&
+      (playFormat !== 'speed' || !speedAttemptedBlue) &&
+      (playFormat !== 'turns' || currentTurn === 'blue') &&
+      deviceTeam !== 'red' &&
+      deviceTeam !== 'view';
+
     if (canBluePlay && detectedBlueOpt !== null && blueConfirmedOpt === null) {
       if (!blueHoldStartRef.current || blueHoldStartRef.current.optionIdx !== detectedBlueOpt) {
         blueHoldStartRef.current = { optionIdx: detectedBlueOpt, startTime: now };
@@ -428,7 +473,16 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     }
 
     // ==================== RED TEAM HOLD LOGIC ====================
-    const canRedPlay = isQuestionStarted && !matchWinner && !redSelectedOption && (playFormat !== 'turns' || currentTurn === 'red');
+    const canRedPlay =
+      isQuestionStarted &&
+      !matchWinner &&
+      !redSelectedOption &&
+      !isAdvancingSpeedQuestion &&
+      (playFormat !== 'speed' || !speedAttemptedRed) &&
+      (playFormat !== 'turns' || currentTurn === 'red') &&
+      deviceTeam !== 'blue' &&
+      deviceTeam !== 'view';
+
     if (canRedPlay && detectedRedOpt !== null && redConfirmedOpt === null) {
       if (!redHoldStartRef.current || redHoldStartRef.current.optionIdx !== detectedRedOpt) {
         redHoldStartRef.current = { optionIdx: detectedRedOpt, startTime: now };
@@ -468,7 +522,11 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     onRedAnswer,
     onBlueAnswer,
     blueProgress,
-    redProgress
+    redProgress,
+    speedAttemptedRed,
+    speedAttemptedBlue,
+    isAdvancingSpeedQuestion,
+    deviceTeam
   ]);
 
   useEffect(() => {
@@ -486,23 +544,25 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     return null;
   }
 
+  const optionsList = currentQuestion?.options || ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'];
+
   return (
-    <div className="bg-slate-900/95 border-2 border-amber-400/70 rounded-3xl p-3 sm:p-4 shadow-2xl space-y-3 relative overflow-hidden animate-in fade-in duration-300">
-      {/* Top Bar Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-700/80">
+    <div className="bg-slate-900/95 border-2 border-amber-400/80 rounded-3xl p-3 sm:p-5 shadow-2xl space-y-4 relative overflow-hidden animate-in fade-in duration-300">
+      {/* 1. TOP HEADER & CONTROLS */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-700/80">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/40 animate-pulse">
-            <Camera className="w-4 h-4" />
+          <div className="p-2 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/40 animate-pulse">
+            <Camera className="w-5 h-5" />
           </div>
           <div>
             <h4 className="text-xs sm:text-sm font-black text-amber-300 uppercase tracking-wide flex items-center gap-2">
-              <span>📷 CAMERA AI NHẬN DIỆN CỬ CHỈ 2 ĐỘI</span>
+              <span>📷 THI ĐẤU BẰNG CỬ CHỈ CAMERA (CHẾ ĐỘ TỐC ĐỘ 2 ĐỘI)</span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold">
-                Live 2 Khung Hình
+                ⚡ Đội Đúng Trước Được Điểm
               </span>
             </h4>
             <p className="text-[11px] text-slate-400">
-              1 ngón = A • 2 ngón = B • 3 ngón = C • 4 ngón = D (Giữ cử chỉ 0.8s để chọn)
+              1 ngón = A • 2 ngón = B • 3 ngón = C • 4 ngón = D (Giơ tay giữ 0.8s để chốt)
             </p>
           </div>
         </div>
@@ -518,20 +578,12 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
           </button>
 
           <button
-            onClick={() => setIsCompact(!isCompact)}
-            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all cursor-pointer"
-            title={isCompact ? 'Mở rộng camera' : 'Thu nhỏ camera'}
-          >
-            {isCompact ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-          </button>
-
-          <button
             onClick={onToggleCamera}
-            className="px-2.5 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1 transition-all shadow-md cursor-pointer"
-            title="Tắt Camera"
+            className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1 transition-all shadow-md cursor-pointer"
+            title="Tắt chế độ Camera"
           >
             <CameraOff className="w-3.5 h-3.5" />
-            <span>Tắt</span>
+            <span>Tắt Camera</span>
           </button>
         </div>
       </div>
@@ -601,107 +653,293 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
         </div>
       )}
 
-      {/* Main Dual Zone Camera Stage */}
-      <div className={`relative rounded-2xl overflow-hidden bg-slate-950 border-2 border-slate-700 shadow-inner transition-all ${
-        isCompact ? 'max-h-[160px] sm:max-h-[200px]' : 'max-h-[280px] sm:max-h-[380px]'
-      }`}>
-        {/* Hidden Raw Video (Used for MediaPipe Frame Processing) */}
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          autoPlay
-          className="absolute inset-0 w-full h-full object-cover -scale-x-100 opacity-90 pointer-events-none"
-        />
+      {/* ================= 2. KHUNG CÂU HỎI NẰM PHÍA TRÊN CAMERA ================= */}
+      {isQuestionStarted && currentQuestion ? (
+        <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-rose-950/80 to-slate-900 border-2 border-amber-400/70 p-4 sm:p-5 shadow-2xl space-y-2 text-center relative overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+            <span className="px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-md">
+              <Zap className="w-4 h-4 fill-current" />
+              <span>CÂU {redAnswerCount + 1}/{questionsPerMatch > 0 ? questionsPerMatch : '∞'}</span>
+            </span>
 
-        {/* Canvas for Skeleton & Zone Rendering */}
-        <canvas
-          ref={canvasRef}
-          className="relative z-10 w-full h-full object-cover block"
-        />
+            <span className="px-3 py-1 rounded-full bg-slate-800 border border-amber-400/40 text-amber-300 font-black text-xs">
+              🎯 Đội nào giơ đúng trước sẽ ghi điểm & kéo dây!
+            </span>
 
-        {/* Dynamic Zone Overlays & Feedback Badges */}
-        <div className="absolute inset-0 z-20 pointer-events-none flex">
-          {/* ================= LEFT HALF: BLUE TEAM ================= */}
-          <div className="flex-1 p-2 sm:p-3 flex flex-col justify-between border-r-2 border-dashed border-white/40 bg-sky-950/10">
-            {/* Top Badge */}
-            <div className="flex items-center justify-between">
-              <span className="px-2.5 py-1 rounded-xl bg-sky-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
-                <span>🔵 ĐỘI XANH</span>
-              </span>
+            <span className="px-3 py-1 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 font-extrabold text-xs">
+              📚 {currentQuestion.subject || 'Tổng hợp'}
+            </span>
+          </div>
 
-              {blueGesture.optionIdx !== null && (
-                <span className="px-2.5 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs shadow-lg animate-bounce">
-                  {GESTURE_EMOJIS[blueGesture.fingers] || '✋'}
-                </span>
-              )}
+          <h3 className="text-base sm:text-2xl font-black text-white leading-relaxed px-2 py-1 drop-shadow-md">
+            {currentQuestion.question}
+          </h3>
+
+          {/* Realtime Action Score Notice */}
+          {scoreNotice && (
+            <div className="py-1 px-3 rounded-full bg-slate-950/80 border border-slate-700 text-amber-300 text-xs font-bold inline-block animate-pulse">
+              {scoreNotice}
             </div>
+          )}
+        </div>
+      ) : (
+        <div className="py-4 text-center text-amber-300 font-bold text-sm bg-slate-950/60 rounded-2xl border border-slate-700">
+          ⏳ Vui lòng chờ Giáo viên bấm "▶️ BẮT ĐẦU TRẬN ĐẤU" để mở câu hỏi...
+        </div>
+      )}
 
-            {/* Bottom Detection Feedback & Hold Bar */}
-            <div className="space-y-1.5 max-w-[200px]">
-              {blueProgress > 0 && blueConfirmedOpt === null && (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-black text-sky-200">
-                    <span>Đang chọn {OPTION_LETTERS[blueGesture.optionIdx || 0]}...</span>
-                    <span>{blueProgress}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-900/80 rounded-full overflow-hidden border border-sky-400/50">
-                    <div
-                      className="h-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-75"
-                      style={{ width: `${blueProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+      {/* ================= 3. BỐ CỤC 3 CỘT: 2 CỘT ĐÁP ÁN CHẠY DỌC 2 BÊN + CAMERA Ở GIỮA ================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
+        {/* ================= CỘT TRÁI: 🔵 ĐỘI XANH (4 ĐÁP ÁN DỌC) ================= */}
+        <div className="lg:col-span-3 bg-gradient-to-b from-[#1e293b] to-[#0f172a] border-2 border-sky-500/70 rounded-3xl p-3 sm:p-4 flex flex-col justify-between shadow-xl space-y-3">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-2 border-b border-sky-500/30">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-sky-400 animate-ping"></span>
+              <h4 className="font-black text-sm sm:text-base text-sky-200 uppercase">🔵 Đội Xanh</h4>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-xl bg-amber-400 text-slate-950 font-black text-sm shadow-md">
+              {blueScore} điểm
+            </span>
+          </div>
 
-              {blueConfirmedOpt !== null && (
-                <div className="px-2.5 py-1 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1 shadow-lg animate-pulse">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>ĐÃ CHỌN ĐÁP ÁN {OPTION_LETTERS[blueConfirmedOpt]}!</span>
+          {/* Speed Status Badge */}
+          {speedAttemptedBlue && (
+            <div className="py-1 px-2 rounded-xl bg-rose-950/80 text-rose-300 border border-rose-500/50 text-center text-[11px] font-bold">
+              ❌ Đội Xanh đã trả lời sai câu này
+            </div>
+          )}
+
+          {/* 4 Vertical Option Cards */}
+          <div className="space-y-2.5 flex-1 flex flex-col justify-around">
+            {optionsList.map((opt, idx) => {
+              const isGestureTarget = blueGesture.optionIdx === idx;
+              const isSelected = blueSelectedOption?.idx === idx;
+              const isCorrect = isSelected && blueSelectedOption?.result === 'correct';
+              const isWrong = isSelected && blueSelectedOption?.result === 'wrong';
+              const isDisabled =
+                !isQuestionStarted ||
+                !!matchWinner ||
+                isAdvancingSpeedQuestion ||
+                speedAttemptedBlue ||
+                deviceTeam === 'red' ||
+                deviceTeam === 'view';
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => onBlueAnswer(idx)}
+                  disabled={isDisabled}
+                  className={`w-full p-3 rounded-2xl border-2 text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                    isDisabled
+                      ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-700 text-slate-400'
+                      : 'cursor-pointer active:scale-98'
+                  } ${
+                    isCorrect
+                      ? 'bg-emerald-600 border-emerald-300 text-white shadow-emerald-500/50 ring-4 ring-emerald-400/50 animate-pulse'
+                      : isWrong
+                      ? 'bg-rose-700 border-rose-400 text-white shadow-rose-600/50'
+                      : isGestureTarget && blueProgress > 0 && !blueSelectedOption
+                      ? 'bg-sky-950/90 border-amber-400 ring-2 ring-amber-300 shadow-lg'
+                      : 'bg-slate-800/90 hover:bg-sky-950/60 border-slate-700 text-slate-200 hover:border-sky-400'
+                  }`}
+                >
+                  {/* Option Label & Gesture Icon */}
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <span className="font-black text-xs sm:text-sm text-sky-300 flex items-center gap-1.5">
+                      <span className="text-base">{GESTURE_ICONS[idx]}</span>
+                      <span>Đáp án {OPTION_LETTERS[idx]}</span>
+                    </span>
+                    {isGestureTarget && blueProgress > 0 && !blueSelectedOption && (
+                      <span className="text-[11px] font-black text-amber-300">{blueProgress}%</span>
+                    )}
+                  </div>
+
+                  <p className="text-xs sm:text-sm font-extrabold text-white leading-snug line-clamp-2">
+                    {opt}
+                  </p>
+
+                  {/* Hold Progress Bar inside option button */}
+                  {isGestureTarget && blueProgress > 0 && !blueSelectedOption && (
+                    <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden mt-1.5 border border-sky-400/40">
+                      <div
+                        className="h-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-75"
+                        style={{ width: `${blueProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ================= CỘT GIỮA: CAMERA DUAL ZONE & SÂN KÉO CO ================= */}
+        <div className="lg:col-span-6 flex flex-col justify-between space-y-3">
+          {/* Main Dual Zone Camera Viewfinder */}
+          <div className="relative rounded-3xl overflow-hidden bg-slate-950 border-2 border-slate-700 shadow-2xl h-[260px] sm:h-[320px]">
+            {/* Hidden Raw Video (Used for MediaPipe Frame Processing) */}
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              className="absolute inset-0 w-full h-full object-cover -scale-x-100 opacity-90 pointer-events-none"
+            />
+
+            {/* Canvas for Skeleton & Zone Rendering */}
+            <canvas
+              ref={canvasRef}
+              className="relative z-10 w-full h-full object-cover block"
+            />
+
+            {/* Dynamic Zone Overlays */}
+            <div className="absolute inset-0 z-20 pointer-events-none flex">
+              {/* Left Zone: Blue */}
+              <div className="flex-1 p-2 sm:p-3 flex flex-col justify-between border-r-2 border-dashed border-white/40 bg-sky-950/10">
+                <div className="flex items-center justify-between">
+                  <span className="px-2.5 py-1 rounded-xl bg-sky-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
+                    <span>🔵 ĐỘI XANH</span>
+                  </span>
+
+                  {blueGesture.optionIdx !== null && (
+                    <span className="px-2.5 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs shadow-lg animate-bounce">
+                      {GESTURE_EMOJIS[blueGesture.fingers] || '✋'}
+                    </span>
+                  )}
                 </div>
-              )}
+
+                {/* Bottom Status */}
+                {blueConfirmedOpt !== null && (
+                  <div className="px-2.5 py-1 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1 shadow-lg animate-pulse max-w-[180px]">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>ĐÃ CHỌN {OPTION_LETTERS[blueConfirmedOpt]}!</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Zone: Red */}
+              <div className="flex-1 p-2 sm:p-3 flex flex-col justify-between bg-rose-950/10">
+                <div className="flex items-center justify-between">
+                  <span className="px-2.5 py-1 rounded-xl bg-rose-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
+                    <span>🔴 ĐỘI ĐỎ</span>
+                  </span>
+
+                  {redGesture.optionIdx !== null && (
+                    <span className="px-2.5 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs shadow-lg animate-bounce">
+                      {GESTURE_EMOJIS[redGesture.fingers] || '✋'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Bottom Status */}
+                {redConfirmedOpt !== null && (
+                  <div className="px-2.5 py-1 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1 shadow-lg animate-pulse max-w-[180px] ml-auto">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>ĐÃ CHỌN {OPTION_LETTERS[redConfirmedOpt]}!</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* ================= RIGHT HALF: RED TEAM ================= */}
-          <div className="flex-1 p-2 sm:p-3 flex flex-col justify-between bg-rose-950/10">
-            {/* Top Badge */}
-            <div className="flex items-center justify-between">
-              <span className="px-2.5 py-1 rounded-xl bg-rose-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
-                <span>🔴 ĐỘI ĐỎ</span>
-              </span>
+          {/* Vector Tug of War Cartoon Stage */}
+          <div className="bg-slate-950 border-2 border-slate-800 rounded-3xl p-2 sm:p-3 shadow-inner relative overflow-hidden">
+            <TugOfWarCartoonStage
+              ropePosition={ropePosition}
+              pullingTeamAnimation={pullingTeamAnimation}
+              isFullscreen={false}
+            />
 
-              {redGesture.optionIdx !== null && (
-                <span className="px-2.5 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs shadow-lg animate-bounce">
-                  {GESTURE_EMOJIS[redGesture.fingers] || '✋'}
-                </span>
-              )}
+            {matchWinner && (
+              <div className="rounded-2xl bg-amber-400 text-slate-950 font-black text-center p-3 text-sm sm:text-base animate-bounce shadow-2xl mt-2">
+                🏆 {matchWinner === 'red' ? '🔴 ĐỘI ĐỎ CHIẾN THẮNG!' : '🔵 ĐỘI XANH CHIẾN THẮNG!'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ================= CỘT PHẢI: 🔴 ĐỘI ĐỎ (4 ĐÁP ÁN DỌC) ================= */}
+        <div className="lg:col-span-3 bg-gradient-to-b from-[#450a0a] to-[#180505] border-2 border-rose-500/70 rounded-3xl p-3 sm:p-4 flex flex-col justify-between shadow-xl space-y-3">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-2 border-b border-rose-500/30">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></span>
+              <h4 className="font-black text-sm sm:text-base text-rose-200 uppercase">🔴 Đội Đỏ</h4>
             </div>
+            <span className="px-2.5 py-0.5 rounded-xl bg-amber-400 text-slate-950 font-black text-sm shadow-md">
+              {redScore} điểm
+            </span>
+          </div>
 
-            {/* Bottom Detection Feedback & Hold Bar */}
-            <div className="space-y-1.5 max-w-[200px] ml-auto">
-              {redProgress > 0 && redConfirmedOpt === null && (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-black text-rose-200">
-                    <span>Đang chọn {OPTION_LETTERS[redGesture.optionIdx || 0]}...</span>
-                    <span>{redProgress}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-900/80 rounded-full overflow-hidden border border-rose-400/50">
-                    <div
-                      className="h-full bg-gradient-to-r from-rose-400 to-emerald-400 transition-all duration-75"
-                      style={{ width: `${redProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {redConfirmedOpt !== null && (
-                <div className="px-2.5 py-1 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1 shadow-lg animate-pulse">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>ĐÃ CHỌN ĐÁP ÁN {OPTION_LETTERS[redConfirmedOpt]}!</span>
-                </div>
-              )}
+          {/* Speed Status Badge */}
+          {speedAttemptedRed && (
+            <div className="py-1 px-2 rounded-xl bg-rose-900/90 text-rose-200 border border-rose-500/50 text-center text-[11px] font-bold">
+              ❌ Đội Đỏ đã trả lời sai câu này
             </div>
+          )}
+
+          {/* 4 Vertical Option Cards */}
+          <div className="space-y-2.5 flex-1 flex flex-col justify-around">
+            {optionsList.map((opt, idx) => {
+              const isGestureTarget = redGesture.optionIdx === idx;
+              const isSelected = redSelectedOption?.idx === idx;
+              const isCorrect = isSelected && redSelectedOption?.result === 'correct';
+              const isWrong = isSelected && redSelectedOption?.result === 'wrong';
+              const isDisabled =
+                !isQuestionStarted ||
+                !!matchWinner ||
+                isAdvancingSpeedQuestion ||
+                speedAttemptedRed ||
+                deviceTeam === 'blue' ||
+                deviceTeam === 'view';
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => onRedAnswer(idx)}
+                  disabled={isDisabled}
+                  className={`w-full p-3 rounded-2xl border-2 text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                    isDisabled
+                      ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-700 text-slate-400'
+                      : 'cursor-pointer active:scale-98'
+                  } ${
+                    isCorrect
+                      ? 'bg-emerald-600 border-emerald-300 text-white shadow-emerald-500/50 ring-4 ring-emerald-400/50 animate-pulse'
+                      : isWrong
+                      ? 'bg-rose-700 border-rose-400 text-white shadow-rose-600/50'
+                      : isGestureTarget && redProgress > 0 && !redSelectedOption
+                      ? 'bg-rose-950/90 border-amber-400 ring-2 ring-amber-300 shadow-lg'
+                      : 'bg-slate-800/90 hover:bg-rose-950/60 border-slate-700 text-slate-200 hover:border-rose-400'
+                  }`}
+                >
+                  {/* Option Label & Gesture Icon */}
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <span className="font-black text-xs sm:text-sm text-rose-300 flex items-center gap-1.5">
+                      <span className="text-base">{GESTURE_ICONS[idx]}</span>
+                      <span>Đáp án {OPTION_LETTERS[idx]}</span>
+                    </span>
+                    {isGestureTarget && redProgress > 0 && !redSelectedOption && (
+                      <span className="text-[11px] font-black text-amber-300">{redProgress}%</span>
+                    )}
+                  </div>
+
+                  <p className="text-xs sm:text-sm font-extrabold text-white leading-snug line-clamp-2">
+                    {opt}
+                  </p>
+
+                  {/* Hold Progress Bar inside option button */}
+                  {isGestureTarget && redProgress > 0 && !redSelectedOption && (
+                    <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden mt-1.5 border border-rose-400/40">
+                      <div
+                        className="h-full bg-gradient-to-r from-rose-400 to-emerald-400 transition-all duration-75"
+                        style={{ width: `${redProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
