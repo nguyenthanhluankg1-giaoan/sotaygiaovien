@@ -356,12 +356,18 @@ export default function App() {
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isStudentTugAccess =
     (urlParams?.has('tugTeam') && urlParams.get('tugTeam') !== 'teacher') ||
-    urlParams?.get('page') === 'film';
+    urlParams?.get('page') === 'film' ||
+    urlParams?.has('team');
 
   if (!currentUser && isStudentTugAccess) {
+    const targetClassId = urlParams?.get('classId') || state.activeClassId || 'default';
+    const guestState: AppState = {
+      ...state,
+      activeClassId: targetClassId
+    };
     return (
       <div className="min-h-screen bg-slate-950 p-2 sm:p-4 text-slate-100">
-        <FilmTab state={state} onUpdateState={handleUpdateState} />
+        <FilmTab state={guestState} onUpdateState={handleUpdateState} />
       </div>
     );
   }

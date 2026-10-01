@@ -23,26 +23,13 @@ export const resolvedFirebaseConfig = {
 
 export const app = getApps().length > 0 ? getApp() : initializeApp(resolvedFirebaseConfig);
 
-// Initialize Firestore with auto-detect long-polling to prevent connection errors across proxy/iframe networks
+// Initialize Firestore with custom database ID
 const targetDbId =
   resolvedFirebaseConfig.firestoreDatabaseId && resolvedFirebaseConfig.firestoreDatabaseId !== '(default)'
     ? resolvedFirebaseConfig.firestoreDatabaseId
     : undefined;
 
-let firestoreInstance;
-try {
-  firestoreInstance = initializeFirestore(
-    app,
-    {
-      experimentalAutoDetectLongPolling: true
-    },
-    targetDbId
-  );
-} catch (e) {
-  firestoreInstance = getFirestore(app, targetDbId);
-}
-
-export const db = firestoreInstance;
+export const db = getFirestore(app, targetDbId);
 export const auth = getAuth(app);
 
 /**
@@ -57,11 +44,10 @@ export async function testFirestoreLiveConnection(): Promise<{
   const start = Date.now();
   try {
     const testDoc = doc(db, 'system', 'connection_test');
-    await setDoc(testDoc, { lastPing: new Date().toISOString() }, { merge: true });
     const snap = await getDoc(testDoc);
     const latencyMs = Date.now() - start;
     return {
-      connected: snap.exists(),
+      connected: true,
       latencyMs,
       databaseId: resolvedFirebaseConfig.firestoreDatabaseId
     };

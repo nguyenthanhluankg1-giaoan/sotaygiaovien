@@ -485,8 +485,10 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     return 'teacher';
   });
 
-  // Multi-Device Room ID
-  const roomDocId = `tug_room_${state.activeClassId || 'default'}`;
+  // Multi-Device Room ID: reliably extract target classId from URL param or state.activeClassId
+  const urlClassId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('classId') : null;
+  const targetRoomClassId = urlClassId || state.activeClassId || 'default';
+  const roomDocId = `tug_room_${targetRoomClassId}`;
 
   // Helper to broadcast room state updates across devices
   const broadcastRoomState = (partialState: Record<string, any>) => {
@@ -544,9 +546,10 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             if (data.redPin) setRedPin(String(data.redPin));
             if (data.bluePin) setBluePin(String(data.bluePin));
 
-            if (data.updatedBy !== deviceTeam) {
+            // Sync match state if updated by another device or if local questions are not loaded yet
+            if (data.updatedBy !== deviceTeam || matchQuestions.length === 0) {
               if (typeof data.isQuestionStarted === 'boolean') setIsQuestionStarted(data.isQuestionStarted);
-              if (Array.isArray(data.matchQuestions)) setMatchQuestions(data.matchQuestions);
+              if (Array.isArray(data.matchQuestions) && data.matchQuestions.length > 0) setMatchQuestions(data.matchQuestions);
               if (typeof data.redQuestionIdx === 'number') setRedQuestionIdx(data.redQuestionIdx);
               if (typeof data.blueQuestionIdx === 'number') setBlueQuestionIdx(data.blueQuestionIdx);
               if (typeof data.redScore === 'number') setRedScore(data.redScore);
@@ -566,6 +569,9 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
               if (typeof data.timeLeft === 'number') setTimeLeft(data.timeLeft);
               if (typeof data.isTimerRunning === 'boolean') setIsTimerRunning(data.isTimerRunning);
               if (typeof data.questionsPerMatch === 'number') setQuestionsPerMatch(data.questionsPerMatch);
+              if (typeof data.isCameraGestureEnabled === 'boolean' && deviceTeam !== 'teacher') {
+                setIsCameraGestureEnabled(data.isCameraGestureEnabled);
+              }
             }
           }
         } else if (deviceTeam === 'teacher') {
@@ -581,6 +587,8 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             redPin: initRed,
             bluePin: initBlue,
             updatedBy: 'teacher',
+            isQuestionStarted: false,
+            matchQuestions: [],
             lastUpdated: new Date().toISOString()
           }, { merge: true }).catch(console.warn);
         }
@@ -597,7 +605,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
   // Copy 1 Universal Link for all student machines / viewer
   const copyUniversalLink = () => {
     const baseUrl = window.location.origin + window.location.pathname;
-    const url = `${baseUrl}?page=film&classId=${state.activeClassId || 'default'}`;
+    const url = `${baseUrl}?page=film&classId=${encodeURIComponent(targetRoomClassId)}`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(url).then(() => {
         setCopySuccessMsg('🎉 Đã sao chép 1 đường link chung duy nhất! Thầy/Cô gửi link này cho cả lớp mở trên máy tính.');
@@ -1831,55 +1839,50 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         {/* Background Stadium Grid & Lighting */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black opacity-90 pointer-events-none" />
 
-        {/* 1. TOP HEADER & TIMER BAR */}
-        <div className={`relative z-10 flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-700/80 ${isFullscreen ? 'px-2' : ''}`}>
-          <div className="flex items-center gap-2.5">
-            <Swords className={`text-amber-300 animate-bounce ${isFullscreen ? 'w-8 h-8 sm:w-10 sm:h-10' : 'w-6 h-6'}`} />
-            <h3 className={`font-black uppercase text-amber-300 tracking-wide ${isFullscreen ? 'text-xl sm:text-3xl' : 'text-base sm:text-lg'}`}>
-              TRÒ CHƠI KÉO CO HỌC TẬP
-            </h3>
+        {/* 1. TOP HEADER & TIMER BAR (Ẩn khi đang mở Camera để tối ưu không gian màn hình Camera) */}
+        {!isCameraGestureEnabled && (
+          <div className={`relative z-10 flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 sm:gap-2 pb-1.5 sm:pb-2 border-b border-slate-700/60 ${isFullscreen ? 'px-1' : ''}`}>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <Swords className={`text-amber-300 animate-bounce ${isFullscreen ? 'w-5 h-5 sm:w-6 sm:h-6' : 'w-4 h-4 sm:w-5 sm:h-5'}`} />
+              <h3 className={`font-black uppercase text-amber-300 tracking-wide whitespace-nowrap ${isFullscreen ? 'text-sm sm:text-base md:text-lg' : 'text-xs sm:text-sm'}`}>
+                TRÒ CHƠI KÉO CO HỌC TẬP
+              </h3>
+            </div>
+
+            {/* Countdown Timer Badge & Fullscreen Exit Button (All in 1 Horizontal Row) */}
+            <div className="flex flex-row items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
+              <button
+                onClick={() => setIsConfigModalOpen(true)}
+                className="px-2.5 py-1 rounded-xl bg-teal-500/90 hover:bg-teal-400 text-slate-950 font-black text-xs shadow-md flex flex-row items-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+                title="Cấu hình thể thức thi đấu"
+              >
+                <Settings className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">⚙️ Cấu hình</span>
+              </button>
+
+              <button
+                onClick={() => setIsTimerRunning(!isTimerRunning)}
+                className={`px-3 py-1 rounded-xl font-black text-xs sm:text-sm border flex flex-row items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 shadow-md active:scale-95 ${
+                  isTimerRunning
+                    ? 'bg-amber-400 text-slate-950 border-amber-300 animate-pulse font-black'
+                    : 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                }`}
+                title={isTimerRunning ? 'Bấm để dừng đếm ngược' : 'Bấm để chạy đồng hồ đếm ngược'}
+              >
+                <Timer className={`w-3.5 h-3.5 shrink-0 ${isTimerRunning ? 'text-slate-950 fill-current' : 'text-amber-400'}`} />
+                <span className="whitespace-nowrap font-black">⏰ {timeLeft}s</span>
+              </button>
+
+              <button
+                onClick={toggleFullscreen}
+                className="px-2.5 py-1 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow-md flex flex-row items-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+              >
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 shrink-0" /> : <Maximize2 className="w-3.5 h-3.5 shrink-0" />}
+                <span className="whitespace-nowrap">{isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'}</span>
+              </button>
+            </div>
           </div>
-
-          {/* Countdown Timer Badge & Fullscreen Exit Button */}
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => setIsConfigModalOpen(true)}
-              className={`rounded-2xl bg-teal-400 hover:bg-teal-300 text-slate-950 font-black shadow-lg flex items-center gap-1.5 transition-all cursor-pointer ${
-                isFullscreen ? 'px-5 py-2.5 text-base sm:text-xl' : 'px-3 py-1.5 text-xs'
-              }`}
-              title="Cấu hình thể thức thi đấu"
-            >
-              <Settings className="w-4 h-4" />
-              <span>⚙️ Cấu hình</span>
-            </button>
-
-            <button
-              onClick={() => setIsTimerRunning(!isTimerRunning)}
-              className={`rounded-2xl font-black border flex items-center gap-2 transition-all cursor-pointer ${
-                isFullscreen
-                  ? 'px-5 py-2.5 text-lg sm:text-2xl shadow-lg'
-                  : 'px-3 py-1.5 text-sm sm:text-base'
-              } ${
-                isTimerRunning
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-400 animate-pulse'
-                  : 'bg-slate-800 text-slate-200 border-slate-700'
-              }`}
-            >
-              <Timer className={isFullscreen ? 'w-6 h-6 text-amber-400' : 'w-5 h-5 text-amber-400'} />
-              <span>⏰ {timeLeft}s</span>
-            </button>
-
-            <button
-              onClick={toggleFullscreen}
-              className={`rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black shadow-xl flex items-center gap-2 transition-all cursor-pointer ${
-                isFullscreen ? 'px-6 py-2.5 text-base sm:text-xl' : 'px-3 py-1.5 text-xs'
-              }`}
-            >
-              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-4 h-4" />}
-              <span>{isFullscreen ? 'Thoát Toàn Màn Hình' : 'Toàn màn hình'}</span>
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* 2. MAIN ARENA (Conditionally switches between Camera Gesture Dual Zone and Standard 3-Column Arena) */}
         {isCameraGestureEnabled ? (
@@ -1899,6 +1902,10 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             onToggleCamera={() => setIsCameraGestureEnabled(false)}
             onStartMatch={startRandomQuestion}
             onToggleFullscreen={toggleFullscreen}
+            onOpenConfig={() => setIsConfigModalOpen(true)}
+            timeLeft={timeLeft}
+            isTimerRunning={isTimerRunning}
+            onToggleTimer={() => setIsTimerRunning(!isTimerRunning)}
             currentQuestion={matchQuestions[redQuestionIdx] || matchQuestions[0] || null}
             redScore={redScore}
             blueScore={blueScore}
