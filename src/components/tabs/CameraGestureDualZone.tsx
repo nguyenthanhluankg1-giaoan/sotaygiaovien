@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, CameraOff, Sparkles, RefreshCw, CheckCircle2, Hand, Info, Minimize2, Maximize2, Zap, AlertCircle, Swords, Trophy, RotateCcw } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
-import { TugOfWarCartoonStage } from './FilmTab';
 
 export interface ActiveQuestionInfo {
   id: string;
@@ -774,10 +773,10 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
           </div>
         </div>
 
-        {/* ================= CỘT GIỮA: CAMERA DUAL ZONE & SÂN KÉO CO ================= */}
+        {/* ================= CỘT GIỮA: CAMERA DUAL ZONE (TOÀN MÀN HÌNH CAMERA) ================= */}
         <div className="lg:col-span-6 flex flex-col justify-between space-y-3">
-          {/* Main Dual Zone Camera Viewfinder */}
-          <div className="relative rounded-3xl overflow-hidden bg-slate-950 border-2 border-slate-700 shadow-2xl h-[260px] sm:h-[320px]">
+          {/* Main Dual Zone Full-Height Camera Viewfinder */}
+          <div className="relative rounded-3xl overflow-hidden bg-slate-950 border-2 border-slate-700 shadow-2xl flex-1 min-h-[380px] sm:min-h-[460px] flex flex-col justify-between">
             {/* Hidden Raw Video (Used for MediaPipe Frame Processing) */}
             <video
               ref={videoRef}
@@ -796,7 +795,7 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
             {/* Dynamic Zone Overlays */}
             <div className="absolute inset-0 z-20 pointer-events-none flex">
               {/* Left Zone: Blue */}
-              <div className="flex-1 p-2 sm:p-3 flex flex-col justify-between border-r-2 border-dashed border-white/40 bg-sky-950/10">
+              <div className="flex-1 p-2.5 sm:p-3.5 flex flex-col justify-between border-r-2 border-dashed border-white/40 bg-sky-950/10">
                 <div className="flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-xl bg-sky-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
                     <span>🔵 ĐỘI XANH</span>
@@ -811,15 +810,15 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
 
                 {/* Bottom Status */}
                 {blueConfirmedOpt !== null && (
-                  <div className="px-2.5 py-1 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1 shadow-lg animate-pulse max-w-[180px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  <div className="px-3 py-1.5 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg animate-pulse max-w-[200px]">
+                    <CheckCircle2 className="w-4 h-4" />
                     <span>ĐÃ CHỌN {OPTION_LETTERS[blueConfirmedOpt]}!</span>
                   </div>
                 )}
               </div>
 
               {/* Right Zone: Red */}
-              <div className="flex-1 p-2 sm:p-3 flex flex-col justify-between bg-rose-950/10">
+              <div className="flex-1 p-2.5 sm:p-3.5 flex flex-col justify-between bg-rose-950/10">
                 <div className="flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-xl bg-rose-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
                     <span>🔴 ĐỘI ĐỎ</span>
@@ -834,8 +833,8 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
 
                 {/* Bottom Status */}
                 {redConfirmedOpt !== null && (
-                  <div className="px-2.5 py-1 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1 shadow-lg animate-pulse max-w-[180px] ml-auto">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  <div className="px-3 py-1.5 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg animate-pulse max-w-[200px] ml-auto">
+                    <CheckCircle2 className="w-4 h-4" />
                     <span>ĐÃ CHỌN {OPTION_LETTERS[redConfirmedOpt]}!</span>
                   </div>
                 )}
@@ -843,16 +842,51 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
             </div>
           </div>
 
-          {/* Vector Tug of War Cartoon Stage */}
-          <div className="bg-slate-950 border-2 border-slate-800 rounded-3xl p-2 sm:p-3 shadow-inner relative overflow-hidden">
-            <TugOfWarCartoonStage
-              ropePosition={ropePosition}
-              pullingTeamAnimation={pullingTeamAnimation}
-              isFullscreen={false}
-            />
+          {/* Sleek Live Tug-of-War HUD Rope Position Gauge */}
+          <div className="bg-slate-950/95 border-2 border-slate-700/80 rounded-2xl p-2.5 sm:p-3 shadow-lg space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] sm:text-xs font-black">
+              <span className="text-sky-400 flex items-center gap-1">
+                <span>🔵 Đích Xanh</span>
+                <span className="text-[10px] font-bold text-slate-400">(-80px)</span>
+              </span>
+              <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black ${
+                ropePosition < 0
+                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 animate-pulse'
+                  : ropePosition > 0
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                  : 'bg-slate-800 text-slate-300'
+              }`}>
+                {ropePosition < 0 ? `👈 Xanh đang kéo dây +${Math.abs(ropePosition)}px` : ropePosition > 0 ? `Đỏ đang kéo dây +${ropePosition}px 👉` : '⚖️ Vạch giữa cân bằng (0px)'}
+              </span>
+              <span className="text-rose-400 flex items-center gap-1">
+                <span className="text-[10px] font-bold text-slate-400">(+80px)</span>
+                <span>🔴 Đích Đỏ</span>
+              </span>
+            </div>
+
+            {/* Visual Rope Bar with Animated Ribbon Marker */}
+            <div className="relative h-6 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden flex items-center">
+              {/* Rope Background Pattern */}
+              <div className="absolute inset-0 bg-gradient-to-r from-sky-950/40 via-amber-950/30 to-rose-950/40" />
+              {/* Center Target Line */}
+              <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-emerald-400/80 z-10 -translate-x-1/2" />
+              
+              {/* Animated Moving Tug Knot / Red Ribbon */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 transition-all duration-300 flex items-center justify-center"
+                style={{
+                  left: `${Math.max(10, Math.min(90, 50 + (ropePosition / 80) * 40))}%`
+                }}
+              >
+                <div className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] shadow-lg flex items-center gap-1 ring-2 ring-amber-300">
+                  <span>🎀 Dây Kéo</span>
+                  <span>({ropePosition > 0 ? `+${ropePosition}` : ropePosition < 0 ? `${ropePosition}` : '0'}px)</span>
+                </div>
+              </div>
+            </div>
 
             {matchWinner && (
-              <div className="rounded-2xl bg-amber-400 text-slate-950 font-black text-center p-3 text-sm sm:text-base animate-bounce shadow-2xl mt-2">
+              <div className="rounded-2xl bg-amber-400 text-slate-950 font-black text-center p-3 text-sm sm:text-base animate-bounce shadow-2xl mt-1">
                 🏆 {matchWinner === 'red' ? '🔴 ĐỘI ĐỎ CHIẾN THẮNG!' : '🔵 ĐỘI XANH CHIẾN THẮNG!'}
               </div>
             )}
