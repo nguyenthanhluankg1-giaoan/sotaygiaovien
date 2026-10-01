@@ -39,16 +39,33 @@ import {
   Eye,
   Gamepad2,
   Camera,
-  CameraOff
+  CameraOff,
+  Shuffle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppState, Student, QuizQuestion } from '../../types';
 import { Avatar } from '../Avatar';
 import { uid } from '../../utils/helpers';
 import { playCelebration, playBeep } from '../../utils/audio';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { CameraGestureDualZone } from './CameraGestureDualZone';
+
+// Bulletproof helper to sanitize any Firestore payload (removes undefined values completely)
+function cleanPayload<T>(obj: T): T {
+  if (obj === undefined) return null as unknown as T;
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map((item) => cleanPayload(item)) as unknown as T;
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, any>)) {
+    if (value !== undefined) {
+      cleaned[key] = cleanPayload(value);
+    }
+  }
+  return cleaned as T;
+}
 
 interface FilmTabProps {
   state: AppState;
@@ -358,6 +375,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
   const [selectedSubject, setSelectedSubject] = useState<string>(state.wheelQuizSubject || 'all');
   const [selectedGrade, setSelectedGrade] = useState<string | number>(state.wheelQuizGrade || 'all');
   const [selectedFolderId, setSelectedFolderId] = useState<string>(state.wheelQuizFolderId || 'all');
+  const [isAutoShuffleOptions, setIsAutoShuffleOptions] = useState<boolean>(true);
 
   // Question State
   const [currentQuestion, setCurrentQuestion] = useState<QuizQuestion | null>(null);
@@ -490,21 +508,31 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
   const targetRoomClassId = urlClassId || state.activeClassId || 'default';
   const roomDocId = `tug_room_${targetRoomClassId}`;
 
-  // Helper to broadcast room state updates across devices
+  // Helper to broadcast room state updates across devices with strict Firestore sanitization
   const broadcastRoomState = (partialState: Record<string, any>) => {
     try {
+      const payload = cleanPayload({
+        ...partialState,
+        redPin,
+        bluePin,
+        activeClassId: targetRoomClassId,
+        updatedBy: deviceTeam,
+        lastUpdated: new Date().toISOString()
+      });
+
+      // 1. Save to specific class room document
       const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
-      setDoc(
-        roomRef,
-        {
-          ...partialState,
-          redPin,
-          bluePin,
-          updatedBy: deviceTeam,
-          lastUpdated: new Date().toISOString()
-        },
-        { merge: true }
-      ).catch((err) => console.warn('Broadcast warn:', err));
+      setDoc(roomRef, payload, { merge: true }).catch((err) =>
+        console.warn('Room sync broadcast error:', err)
+      );
+
+      // 2. Also save to the primary active room document if updated by teacher
+      if (deviceTeam === 'teacher') {
+        const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
+        setDoc(activeRoomRef, payload, { merge: true }).catch((err) =>
+          console.warn('Active room sync broadcast error:', err)
+        );
+      }
     } catch (e) {
       console.warn('Room sync broadcast error:', e);
     }
@@ -520,13 +548,18 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     setRedPin(newRed);
     setBluePin(newBlue);
     try {
-      const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
-      setDoc(roomRef, {
+      const payload = cleanPayload({
         redPin: newRed,
         bluePin: newBlue,
+        activeClassId: targetRoomClassId,
         updatedBy: deviceTeam,
         lastUpdated: new Date().toISOString()
-      }, { merge: true }).catch(console.warn);
+      });
+      const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
+      setDoc(roomRef, payload, { merge: true }).catch(console.warn);
+
+      const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
+      setDoc(activeRoomRef, payload, { merge: true }).catch(console.warn);
     } catch (e) {
       console.warn(e);
     }
@@ -534,46 +567,61 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     setTimeout(() => setCopySuccessMsg(null), 4000);
   };
 
+  // Ref to track question start transition for audio & visual cue on student machines
+  const prevIsQuestionStartedRef = useRef<boolean>(false);
+
   // Subscribe to real-time room state from Cloud Firestore across all devices
   useEffect(() => {
+    const applyRoomData = (data: any) => {
+      if (!data) return;
+      if (data.redPin) setRedPin(String(data.redPin));
+      if (data.bluePin) setBluePin(String(data.bluePin));
+
+      // Trigger energetic start chime and confetti on student devices when teacher starts match
+      if (data.isQuestionStarted === true && !prevIsQuestionStartedRef.current && deviceTeam !== 'teacher') {
+        if (soundEnabled) playBeep(659, 0.25, 0.15);
+        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+      }
+      if (typeof data.isQuestionStarted === 'boolean') {
+        prevIsQuestionStartedRef.current = data.isQuestionStarted;
+      }
+
+      // Sync match state if updated by another device or if local questions are not loaded yet
+      if (data.updatedBy !== deviceTeam || matchQuestions.length === 0) {
+        if (typeof data.isQuestionStarted === 'boolean') setIsQuestionStarted(data.isQuestionStarted);
+        if (Array.isArray(data.matchQuestions) && data.matchQuestions.length > 0) setMatchQuestions(data.matchQuestions);
+        if (typeof data.redQuestionIdx === 'number') setRedQuestionIdx(data.redQuestionIdx);
+        if (typeof data.blueQuestionIdx === 'number') setBlueQuestionIdx(data.blueQuestionIdx);
+        if (typeof data.redScore === 'number') setRedScore(data.redScore);
+        if (typeof data.blueScore === 'number') setBlueScore(data.blueScore);
+        if (typeof data.redAnswerCount === 'number') setRedAnswerCount(data.redAnswerCount);
+        if (typeof data.blueAnswerCount === 'number') setBlueAnswerCount(data.blueAnswerCount);
+        if (typeof data.ropePosition === 'number') setRopePosition(data.ropePosition);
+        if (data.matchWinner !== undefined) setMatchWinner(data.matchWinner);
+        if (data.currentTurn) setCurrentTurn(data.currentTurn);
+        if (data.playFormat) setPlayFormat(data.playFormat);
+        if (data.redSelectedOption !== undefined) setRedSelectedOption(data.redSelectedOption);
+        if (data.blueSelectedOption !== undefined) setBlueSelectedOption(data.blueSelectedOption);
+        if (typeof data.speedAttemptedRed === 'boolean') setSpeedAttemptedRed(data.speedAttemptedRed);
+        if (typeof data.speedAttemptedBlue === 'boolean') setSpeedAttemptedBlue(data.speedAttemptedBlue);
+        if (data.scoreNotice) setScoreNotice(data.scoreNotice);
+        if (typeof data.tugTimerSeconds === 'number') setTugTimerSeconds(data.tugTimerSeconds);
+        if (typeof data.timeLeft === 'number') setTimeLeft(data.timeLeft);
+        if (typeof data.isTimerRunning === 'boolean') setIsTimerRunning(data.isTimerRunning);
+        if (typeof data.questionsPerMatch === 'number') setQuestionsPerMatch(data.questionsPerMatch);
+        if (typeof data.isCameraGestureEnabled === 'boolean' && deviceTeam !== 'teacher') {
+          setIsCameraGestureEnabled(data.isCameraGestureEnabled);
+        }
+      }
+    };
+
+    // 1. Primary listener for target room
     const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
-    const unsubscribe = onSnapshot(
+    const unsubscribePrimary = onSnapshot(
       roomRef,
       (snapshot) => {
         if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (data) {
-            if (data.redPin) setRedPin(String(data.redPin));
-            if (data.bluePin) setBluePin(String(data.bluePin));
-
-            // Sync match state if updated by another device or if local questions are not loaded yet
-            if (data.updatedBy !== deviceTeam || matchQuestions.length === 0) {
-              if (typeof data.isQuestionStarted === 'boolean') setIsQuestionStarted(data.isQuestionStarted);
-              if (Array.isArray(data.matchQuestions) && data.matchQuestions.length > 0) setMatchQuestions(data.matchQuestions);
-              if (typeof data.redQuestionIdx === 'number') setRedQuestionIdx(data.redQuestionIdx);
-              if (typeof data.blueQuestionIdx === 'number') setBlueQuestionIdx(data.blueQuestionIdx);
-              if (typeof data.redScore === 'number') setRedScore(data.redScore);
-              if (typeof data.blueScore === 'number') setBlueScore(data.blueScore);
-              if (typeof data.redAnswerCount === 'number') setRedAnswerCount(data.redAnswerCount);
-              if (typeof data.blueAnswerCount === 'number') setBlueAnswerCount(data.blueAnswerCount);
-              if (typeof data.ropePosition === 'number') setRopePosition(data.ropePosition);
-              if (data.matchWinner !== undefined) setMatchWinner(data.matchWinner);
-              if (data.currentTurn) setCurrentTurn(data.currentTurn);
-              if (data.playFormat) setPlayFormat(data.playFormat);
-              if (data.redSelectedOption !== undefined) setRedSelectedOption(data.redSelectedOption);
-              if (data.blueSelectedOption !== undefined) setBlueSelectedOption(data.blueSelectedOption);
-              if (typeof data.speedAttemptedRed === 'boolean') setSpeedAttemptedRed(data.speedAttemptedRed);
-              if (typeof data.speedAttemptedBlue === 'boolean') setSpeedAttemptedBlue(data.speedAttemptedBlue);
-              if (data.scoreNotice) setScoreNotice(data.scoreNotice);
-              if (typeof data.tugTimerSeconds === 'number') setTugTimerSeconds(data.tugTimerSeconds);
-              if (typeof data.timeLeft === 'number') setTimeLeft(data.timeLeft);
-              if (typeof data.isTimerRunning === 'boolean') setIsTimerRunning(data.isTimerRunning);
-              if (typeof data.questionsPerMatch === 'number') setQuestionsPerMatch(data.questionsPerMatch);
-              if (typeof data.isCameraGestureEnabled === 'boolean' && deviceTeam !== 'teacher') {
-                setIsCameraGestureEnabled(data.isCameraGestureEnabled);
-              }
-            }
-          }
+          applyRoomData(snapshot.data());
         } else if (deviceTeam === 'teacher') {
           // If room doesn't exist yet, teacher auto-generates 3-digit PINs
           const initRed = generateRandom3DigitPin();
@@ -583,20 +631,41 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
           }
           setRedPin(initRed);
           setBluePin(initBlue);
-          setDoc(roomRef, {
+          const initPayload = cleanPayload({
             redPin: initRed,
             bluePin: initBlue,
+            activeClassId: targetRoomClassId,
             updatedBy: 'teacher',
             isQuestionStarted: false,
             matchQuestions: [],
             lastUpdated: new Date().toISOString()
-          }, { merge: true }).catch(console.warn);
+          });
+          setDoc(roomRef, initPayload, { merge: true }).catch(console.warn);
+          setDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'), initPayload, { merge: true }).catch(console.warn);
         }
       },
       (err) => console.warn('Firestore room sync warn:', err)
     );
 
-    return () => unsubscribe();
+    // 2. Secondary fallback listener for active room (if student device or no URL classId)
+    let unsubscribeActive = () => {};
+    if (deviceTeam !== 'teacher' && roomDocId !== 'tug_room_active') {
+      const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
+      unsubscribeActive = onSnapshot(
+        activeRoomRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            applyRoomData(snapshot.data());
+          }
+        },
+        (err) => console.warn('Active room sync fallback warn:', err)
+      );
+    }
+
+    return () => {
+      unsubscribePrimary();
+      unsubscribeActive();
+    };
   }, [roomDocId, deviceTeam]);
 
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
@@ -634,8 +703,8 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     }
   };
 
-  // Verify entered 3-digit PIN to join team
-  const handleVerifyPin = (pinToTest?: string) => {
+  // Verify entered 3-digit PIN to join team (with cloud lookup fallback)
+  const handleVerifyPin = async (pinToTest?: string) => {
     const targetPin = (pinToTest !== undefined ? pinToTest : inputPin).trim();
     setPinError(null);
     setPinSuccess(null);
@@ -645,6 +714,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       return;
     }
 
+    // 1. Direct local check
     if (targetPin === redPin) {
       setPinSuccess('🎉 Đúng mã Đội Đỏ! Đang kết nối máy Đội Đỏ 🔴...');
       if (soundEnabled) playCelebration();
@@ -654,7 +724,8 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         setIsPinModalOpen(false);
         setInputPin('');
         setPinSuccess(null);
-      }, 700);
+      }, 600);
+      return;
     } else if (targetPin === bluePin) {
       setPinSuccess('🎉 Đúng mã Đội Xanh! Đang kết nối máy Đội Xanh 🔵...');
       if (soundEnabled) playCelebration();
@@ -664,11 +735,51 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         setIsPinModalOpen(false);
         setInputPin('');
         setPinSuccess(null);
-      }, 700);
-    } else {
-      setPinError('❌ Mã không chính xác! Vui lòng hỏi Thầy/Cô mã 3 chữ số của đội bạn.');
-      if (soundEnabled) playBeep(200, 0.3, 0.2);
+      }, 600);
+      return;
     }
+
+    // 2. Cloud lookup in active room
+    try {
+      const activeDocSnap = await getDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'));
+      if (activeDocSnap.exists()) {
+        const activeData = activeDocSnap.data();
+        if (activeData) {
+          if (String(activeData.redPin) === targetPin) {
+            setRedPin(String(activeData.redPin));
+            if (activeData.bluePin) setBluePin(String(activeData.bluePin));
+            setPinSuccess('🎉 Đúng mã Đội Đỏ! Đang kết nối máy Đội Đỏ 🔴...');
+            if (soundEnabled) playCelebration();
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+            setTimeout(() => {
+              setDeviceTeam('red');
+              setIsPinModalOpen(false);
+              setInputPin('');
+              setPinSuccess(null);
+            }, 600);
+            return;
+          } else if (String(activeData.bluePin) === targetPin) {
+            setBluePin(String(activeData.bluePin));
+            if (activeData.redPin) setRedPin(String(activeData.redPin));
+            setPinSuccess('🎉 Đúng mã Đội Xanh! Đang kết nối máy Đội Xanh 🔵...');
+            if (soundEnabled) playCelebration();
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+            setTimeout(() => {
+              setDeviceTeam('blue');
+              setIsPinModalOpen(false);
+              setInputPin('');
+              setPinSuccess(null);
+            }, 600);
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('PIN verification cloud check error:', err);
+    }
+
+    setPinError('❌ Mã không chính xác! Vui lòng hỏi Thầy/Cô mã 3 chữ số của đội bạn.');
+    if (soundEnabled) playBeep(200, 0.3, 0.2);
   };
 
   // Option Highlight & Shared Speed Question Tracking
@@ -688,6 +799,53 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
   const [blueAnswerCount, setBlueAnswerCount] = useState<number>(0);
   const [blueLastResult, setBlueLastResult] = useState<'correct' | 'wrong' | null>(null);
 
+  // Filter available questions from AppState or Fallback
+  const availableQuestions = React.useMemo(() => {
+    const allQ = state.quizQuestions && state.quizQuestions.length > 0
+      ? state.quizQuestions
+      : DEFAULT_TUG_QUESTIONS;
+
+    return allQ.filter((q) => {
+      // Grade filter
+      if (selectedGrade !== 'all') {
+        const targetG = String(selectedGrade);
+        const qG = String(q.grade || 'all');
+        if (qG !== 'all' && qG !== targetG) return false;
+      }
+      // Subject filter
+      if (selectedSubject !== 'all' && q.subject && q.subject !== selectedSubject) {
+        return false;
+      }
+      // Folder filter
+      if (selectedFolderId !== 'all') {
+        if (selectedFolderId === 'uncategorized') {
+          if (q.folderId) return false;
+        } else if (q.folderId !== selectedFolderId) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [state.quizQuestions, selectedGrade, selectedSubject, selectedFolderId]);
+
+  // Track unasked questions pool to guarantee no duplicate questions
+  const unaskedQuestions = React.useMemo(() => {
+    return availableQuestions.filter((q) => !askedQuestionIds.includes(q.id));
+  }, [availableQuestions, askedQuestionIds]);
+
+  const totalAvailableCount = availableQuestions.length;
+  const unaskedCount = unaskedQuestions.length;
+
+  const allSubjectsList = React.useMemo(() => {
+    const defaultSubjects = ['Tin học', 'Toán', 'Tiếng Việt', 'Tự nhiên và Xã hội', 'Lịch sử và Địa lí', 'Tiếng Anh', 'Công nghệ', 'Âm nhạc', 'Mĩ thuật', 'Đạo đức', 'Thể dục'];
+    const customSubjects = state.subjects || [];
+    return Array.from(new Set([...defaultSubjects, ...customSubjects]));
+  }, [state.subjects]);
+
+  const questionFoldersList = state.questionFolders || [];
+  const allQuizQuestionsList = state.quizQuestions || [];
+  const allQuizQuestionsCount = allQuizQuestionsList.length || DEFAULT_TUG_QUESTIONS.length;
+
   // Function to start a new match (Teacher Master Permission Required)
   const startRandomQuestion = () => {
     if (deviceTeam !== 'teacher') {
@@ -705,12 +863,24 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       pool = DEFAULT_TUG_QUESTIONS;
     }
 
-    const shuffledPool = [...pool].sort(() => Math.random() - 0.5);
+    // Filter unasked questions first to ensure no repeats!
+    let unaskedPool = pool.filter((q) => !askedQuestionIds.includes(q.id));
+    if (unaskedPool.length === 0) {
+      // Auto reset asked pool if exhausted!
+      unaskedPool = [...pool];
+      setAskedQuestionIds([]);
+    }
+
+    const shuffledPool = [...unaskedPool].sort(() => Math.random() - 0.5);
     const selectedQuestions: ActiveQuestionData[] = [];
     const targetCount = questionsPerMatch > 0 ? questionsPerMatch : Math.max(10, shuffledPool.length);
 
+    const newlyAskedIds: string[] = [];
+
     for (let i = 0; i < targetCount; i++) {
       const rawQ = shuffledPool[i % shuffledPool.length];
+      if (rawQ.id) newlyAskedIds.push(rawQ.id);
+
       const rawOpts = Array.isArray(rawQ.options) && rawQ.options.length > 0
         ? rawQ.options
         : ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'];
@@ -722,19 +892,27 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
           ? rawQ.correctIndex
           : 0;
 
-      const origText = rawOpts[safeCorrectIdx];
-      const shuffledOpts = [...rawOpts].sort(() => Math.random() - 0.5);
-      const newCorrectIdx = shuffledOpts.findIndex((opt) => opt === origText);
+      let finalOpts = [...rawOpts];
+      let newCorrectIdx = safeCorrectIdx;
+
+      if (isAutoShuffleOptions) {
+        const origText = rawOpts[safeCorrectIdx];
+        finalOpts = [...rawOpts].sort(() => Math.random() - 0.5);
+        newCorrectIdx = finalOpts.findIndex((opt) => opt === origText);
+        if (newCorrectIdx < 0) newCorrectIdx = 0;
+      }
 
       selectedQuestions.push({
         id: rawQ.id || uid('q'),
         question: rawQ.question || 'Câu hỏi trắc nghiệm',
-        options: shuffledOpts,
-        correctIndex: newCorrectIdx >= 0 ? newCorrectIdx : 0,
-        explanation: rawQ.explanation,
+        options: finalOpts,
+        correctIndex: newCorrectIdx,
+        explanation: rawQ.explanation || '',
         subject: rawQ.subject || 'Tổng hợp'
       });
     }
+
+    setAskedQuestionIds((prev) => Array.from(new Set([...prev, ...newlyAskedIds])));
 
     setMatchQuestions(selectedQuestions);
     setRedQuestionIdx(0);
@@ -798,35 +976,6 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       playFormat
     });
   };
-
-  // Filter available questions from AppState or Fallback
-  const availableQuestions = React.useMemo(() => {
-    const allQ = state.quizQuestions && state.quizQuestions.length > 0
-      ? state.quizQuestions
-      : DEFAULT_TUG_QUESTIONS;
-
-    return allQ.filter((q) => {
-      // Grade filter
-      if (selectedGrade !== 'all') {
-        const targetG = String(selectedGrade);
-        const qG = String(q.grade || 'all');
-        if (qG !== 'all' && qG !== targetG) return false;
-      }
-      // Subject filter
-      if (selectedSubject !== 'all' && q.subject && q.subject !== selectedSubject) {
-        return false;
-      }
-      // Folder filter
-      if (selectedFolderId !== 'all') {
-        if (selectedFolderId === 'uncategorized') {
-          if (q.folderId) return false;
-        } else if (q.folderId !== selectedFolderId) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [state.quizQuestions, selectedGrade, selectedSubject, selectedFolderId]);
 
   // Load Question on Index or Filter change
   useEffect(() => {
@@ -1739,6 +1888,90 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         </div>
       </div>
 
+      {/* Teacher Quick Quiz Selection & Filter Bar (Matching Attached Image) */}
+      {deviceTeam === 'teacher' && (
+        <div className="bg-slate-900/90 border border-slate-700/80 rounded-2xl py-2 px-3 text-xs flex flex-wrap items-center justify-between gap-2 shadow-md">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-black text-amber-300 uppercase tracking-wider flex items-center gap-1">
+              <BookOpen className="w-3.5 h-3.5 text-teal-400" />
+              <span>Bộ câu hỏi:</span>
+            </span>
+
+            {/* Khối lớp */}
+            <select
+              value={selectedGrade}
+              onChange={(e) => setSelectedGrade(e.target.value)}
+              className="px-2.5 py-1 rounded-xl bg-slate-950 border border-purple-500/50 text-purple-200 font-bold text-xs focus:border-purple-400 focus:outline-hidden transition-all cursor-pointer"
+            >
+              <option value="all">🎓 Tất cả khối lớp</option>
+              <option value="1">🎓 Khối 1</option>
+              <option value="2">🎓 Khối 2</option>
+              <option value="3">🎓 Khối 3</option>
+              <option value="4">🎓 Khối 4</option>
+              <option value="5">🎓 Khối 5</option>
+            </select>
+
+            {/* Môn học */}
+            <select
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="px-2.5 py-1 rounded-xl bg-slate-950 border border-teal-500/50 text-teal-200 font-bold text-xs focus:border-teal-400 focus:outline-hidden transition-all cursor-pointer"
+            >
+              <option value="all">📖 Tất cả môn học</option>
+              {allSubjectsList.map((subj) => (
+                <option key={subj} value={subj}>
+                  📖 {subj}
+                </option>
+              ))}
+            </select>
+
+            {/* Thư mục */}
+            <select
+              value={selectedFolderId}
+              onChange={(e) => setSelectedFolderId(e.target.value)}
+              className="px-2.5 py-1 rounded-xl bg-slate-950 border border-amber-500/50 text-amber-200 font-bold text-xs focus:border-amber-400 focus:outline-hidden transition-all cursor-pointer max-w-[200px] truncate"
+            >
+              <option value="all">
+                📁 Tất cả thư mục ({allQuizQuestionsCount} câu)
+              </option>
+              {questionFoldersList.map((f) => {
+                const count = allQuizQuestionsList.filter((q) => q.folderId === f.id).length;
+                return (
+                  <option key={f.id} value={f.id}>
+                    📁 {f.name} ({count} câu)
+                  </option>
+                );
+              })}
+              <option value="uncategorized">
+                📁 Chưa phân loại
+              </option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Đảo đáp án Indicator */}
+            <button
+              type="button"
+              onClick={() => setIsAutoShuffleOptions(!isAutoShuffleOptions)}
+              className={`px-2.5 py-1 rounded-xl border text-[11px] font-black flex items-center gap-1 transition-all cursor-pointer ${
+                isAutoShuffleOptions
+                  ? 'bg-purple-950/80 text-purple-300 border-purple-400 shadow-xs'
+                  : 'bg-slate-800 text-slate-400 border-slate-700'
+              }`}
+              title="Tự động đảo đáp án A, B, C, D"
+            >
+              <Shuffle className="w-3 h-3 text-purple-400" />
+              <span>Đảo đáp án: {isAutoShuffleOptions ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {/* Khả dụng / Chưa xuất hiện indicator */}
+            <span className="px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 font-extrabold text-[11px]">
+              🟢 Còn {unaskedCount}/{totalAvailableCount} câu chưa xuất hiện
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Student/Viewer Interactive Guidance Banner */}
       {deviceTeam === 'view' && (
         <div className="bg-slate-900/90 border-2 border-teal-500/50 rounded-2xl py-2 px-3 sm:px-4 text-xs flex flex-col sm:flex-row items-center justify-between gap-2 text-slate-200 shadow-md">
@@ -2400,8 +2633,8 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
                 </div>
               </div>
 
-              {/* Option 3: Timer per Question */}
-              <div className="space-y-2">
+              {/* Option 3: Timer per Question & Custom Timer Input */}
+              <div className="space-y-2.5 p-4 rounded-2xl bg-slate-800/80 border border-slate-700">
                 <label className="text-xs font-black text-teal-400 uppercase tracking-wider block">
                   ⏱️ 3. Thời gian suy nghĩ mỗi câu (Giây)
                 </label>
@@ -2411,7 +2644,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
                     { sec: 15, label: '15 giây' },
                     { sec: 20, label: '20s (Chuẩn)' },
                     { sec: 30, label: '30 giây' },
-                    { sec: 0, label: 'Tắt timer' }
+                    { sec: 60, label: '60s (Mở rộng)' }
                   ].map((item) => (
                     <button
                       key={item.sec}
@@ -2420,10 +2653,10 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
                         setTugTimerSeconds(item.sec);
                         setTimeLeft(item.sec);
                       }}
-                      className={`p-2.5 rounded-2xl border-2 font-bold text-xs transition-all cursor-pointer text-center ${
+                      className={`p-2 rounded-2xl border-2 font-bold text-xs transition-all cursor-pointer text-center ${
                         tugTimerSeconds === item.sec
                           ? 'bg-amber-500 border-amber-200 text-slate-950 shadow-md font-black'
-                          : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-700'
                       }`}
                     >
                       {item.label}
@@ -2431,10 +2664,10 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
                   ))}
                 </div>
 
-                {/* Custom Timer Input Field */}
-                <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-slate-800/80">
-                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
-                    ✏️ Nhập thời gian tùy chỉnh:
+                {/* Custom Timer Input Field (Matching Attached Screenshot) */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-700/80 text-xs">
+                  <span className="font-extrabold text-slate-200 flex items-center gap-1">
+                    Tự chỉnh:
                   </span>
                   <div className="relative flex items-center">
                     <input
@@ -2448,16 +2681,175 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
                         setTugTimerSeconds(val);
                         setTimeLeft(val);
                       }}
-                      className="w-28 pl-3 pr-10 py-1.5 rounded-xl bg-slate-800 border-2 border-teal-500/60 text-amber-300 font-black text-sm text-center focus:border-amber-400 focus:outline-hidden transition-all shadow-inner"
-                      placeholder="Số giây..."
+                      className="w-24 pl-3 pr-9 py-1.5 rounded-xl bg-slate-900 border-2 border-teal-400/80 text-amber-300 font-black text-sm text-center focus:border-amber-400 focus:outline-hidden transition-all shadow-inner"
+                      placeholder="60"
                     />
                     <span className="absolute right-3 text-xs font-bold text-slate-400 pointer-events-none">
-                      s
+                      giây
                     </span>
                   </div>
                   <span className="text-[11px] text-slate-400 italic">
-                    (Nhập 0 - 300 giây. Đặt 0s = Tắt đếm ngược)
+                    (Nhập 0s = Tắt đếm ngược. Mặc định: 20s - 60s)
                   </span>
+                </div>
+              </div>
+
+              {/* Option 4: Quiz Category, Grade, Subject & Folder Filters (Matching Attached Image) */}
+              <div className="space-y-3.5 p-4 rounded-2xl bg-teal-950/40 border-2 border-teal-500/50 shadow-md">
+                <div className="flex items-center justify-between gap-2 pb-2 border-b border-teal-500/30">
+                  <span className="text-xs font-black text-teal-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-teal-400" />
+                    <span>4. Khối lớp, Môn học & Thư mục câu hỏi</span>
+                  </span>
+                  <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/40">
+                    Tổng {totalAvailableCount} câu khả dụng
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Khối lớp xuất hiện */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-purple-400" />
+                      <span>Khối lớp xuất hiện:</span>
+                    </label>
+                    <select
+                      value={selectedGrade}
+                      onChange={(e) => setSelectedGrade(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border-2 border-purple-500/50 text-white font-bold text-xs focus:border-purple-400 focus:outline-hidden transition-all cursor-pointer shadow-md"
+                    >
+                      <option value="all">Tất cả khối lớp</option>
+                      <option value="1">Khối 1</option>
+                      <option value="2">Khối 2</option>
+                      <option value="3">Khối 3</option>
+                      <option value="4">Khối 4</option>
+                      <option value="5">Khối 5</option>
+                    </select>
+                  </div>
+
+                  {/* Môn học xuất hiện */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-teal-400" />
+                      <span>Môn học xuất hiện:</span>
+                    </label>
+                    <select
+                      value={selectedSubject}
+                      onChange={(e) => setSelectedSubject(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border-2 border-teal-500/50 text-white font-bold text-xs focus:border-teal-400 focus:outline-hidden transition-all cursor-pointer shadow-md"
+                    >
+                      <option value="all">Tất cả môn học</option>
+                      {allSubjectsList.map((subj) => (
+                        <option key={subj} value={subj}>
+                          {subj}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Thư mục câu hỏi */}
+                  <div className="space-y-1 col-span-1 sm:col-span-2">
+                    <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <Folder className="w-4 h-4 text-amber-400" />
+                      <span>Thư mục câu hỏi:</span>
+                    </label>
+                    <select
+                      value={selectedFolderId}
+                      onChange={(e) => setSelectedFolderId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border-2 border-amber-500/50 text-white font-bold text-xs focus:border-amber-400 focus:outline-hidden transition-all cursor-pointer shadow-md"
+                    >
+                      <option value="all">
+                        📁 Tất cả thư mục ({allQuizQuestionsCount} câu)
+                      </option>
+                      {questionFoldersList.map((f) => {
+                        const count = allQuizQuestionsList.filter((q) => q.folderId === f.id).length;
+                        return (
+                          <option key={f.id} value={f.id}>
+                            📁 {f.name} ({count} câu)
+                          </option>
+                        );
+                      })}
+                      <option value="uncategorized">
+                        📁 Chưa phân loại ({allQuizQuestionsList.filter((q) => !q.folderId).length} câu)
+                      </option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Option 5: Tự động đảo đáp án (Matching Attached Screenshot Purple Card) */}
+                <div className="p-3.5 rounded-2xl bg-purple-950/60 border-2 border-purple-400/60 shadow-md transition-all">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2.5 rounded-2xl bg-purple-600 text-white shadow-md shrink-0 mt-0.5">
+                        <Shuffle className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h5 className="font-extrabold text-sm text-white">
+                            Tự động đảo đáp án
+                          </h5>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${
+                              isAutoShuffleOptions
+                                ? 'bg-purple-500/30 text-purple-200 border-purple-400 animate-pulse'
+                                : 'bg-slate-800 text-slate-400 border-slate-700'
+                            }`}
+                          >
+                            {isAutoShuffleOptions ? 'ĐANG BẬT' : 'ĐANG TẮT'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-purple-200/80 leading-relaxed font-bold">
+                          Đổi ngẫu nhiên vị trí A, B, C, D. Đảm bảo các câu không bị trùng chữ cái đáp án đúng.
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                      <input
+                        type="checkbox"
+                        checked={isAutoShuffleOptions}
+                        onChange={(e) => setIsAutoShuffleOptions(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Option 6: Đảm bảo không trùng câu (Matching Attached Screenshot Light Green Card) */}
+                <div className="p-3.5 rounded-2xl bg-emerald-950/60 border-2 border-emerald-400/70 shadow-md space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
+                      <h5 className="font-extrabold text-sm text-emerald-200">
+                        Đảm bảo không trùng câu:
+                      </h5>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAskedQuestionIds([]);
+                        if (soundEnabled) playBeep(523, 0.15, 0.1);
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-emerald-100 border border-emerald-500/50 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                      title="Đặt lại danh sách câu hỏi đã hỏi để bắt đầu lượt mới"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Đặt lại kho câu</span>
+                    </button>
+                  </div>
+
+                  <div className="text-xs font-extrabold text-emerald-100 flex items-center gap-1.5">
+                    <span>
+                      Còn <strong className="text-amber-300 text-sm">{unaskedCount}/{totalAvailableCount}</strong> câu chưa xuất hiện
+                    </span>
+                    {unaskedCount === 0 && totalAvailableCount > 0 && (
+                      <span className="text-[11px] text-amber-300 italic font-bold">
+                        (Đã xuất hiện hết! Trận tiếp theo sẽ tự động đặt lại kho)
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

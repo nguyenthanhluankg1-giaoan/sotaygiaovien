@@ -352,12 +352,16 @@ export default function App() {
     setDbConnected(true);
   };
 
-  // Check if URL contains student tugTeam parameter or page=film for direct guest access
+  // Check if URL contains student tugTeam parameter, page=film, or game room param for direct student/guest access
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isStudentTugAccess =
     (urlParams?.has('tugTeam') && urlParams.get('tugTeam') !== 'teacher') ||
     urlParams?.get('page') === 'film' ||
-    urlParams?.has('team');
+    urlParams?.has('team') ||
+    urlParams?.has('room') ||
+    urlParams?.has('tug') ||
+    urlParams?.get('game') === 'tug' ||
+    urlParams?.has('code');
 
   if (!currentUser && isStudentTugAccess) {
     const targetClassId = urlParams?.get('classId') || state.activeClassId || 'default';
