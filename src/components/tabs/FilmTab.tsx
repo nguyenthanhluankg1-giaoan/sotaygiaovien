@@ -636,8 +636,26 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
 
       // Sync match state unconditionally for student devices or when updated by another device
       if (deviceTeam !== 'teacher' || data.updatedBy !== deviceTeam || matchQuestions.length === 0) {
-        if (typeof data.isQuestionStarted === 'boolean') setIsQuestionStarted(data.isQuestionStarted);
-        if (Array.isArray(data.matchQuestions) && data.matchQuestions.length > 0) setMatchQuestions(data.matchQuestions);
+        if (typeof data.isQuestionStarted === 'boolean') {
+          setIsQuestionStarted(data.isQuestionStarted);
+        }
+
+        if (Array.isArray(data.matchQuestions) && data.matchQuestions.length > 0) {
+          setMatchQuestions(data.matchQuestions);
+        } else if (data.isQuestionStarted === true) {
+          // Robust fallback: If match started but questions payload was missing/empty, populate from available questions pool
+          const fallbackPool = availableQuestions.length > 0 ? availableQuestions : DEFAULT_TUG_QUESTIONS;
+          const populated: ActiveQuestionData[] = fallbackPool.map((q) => ({
+            id: q.id || uid('q'),
+            question: q.question || 'Câu hỏi trắc nghiệm',
+            options: Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'],
+            correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+            explanation: q.explanation || '',
+            subject: q.subject || 'Tổng hợp'
+          }));
+          setMatchQuestions(populated);
+        }
+
         if (typeof data.redQuestionIdx === 'number') setRedQuestionIdx(data.redQuestionIdx);
         if (typeof data.blueQuestionIdx === 'number') setBlueQuestionIdx(data.blueQuestionIdx);
         if (typeof data.redScore === 'number') setRedScore(data.redScore);
