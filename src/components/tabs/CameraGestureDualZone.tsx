@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, Sparkles, RefreshCw, CheckCircle2, Hand, Info, Minimize2, Maximize2, Zap, AlertCircle, Swords, Trophy, RotateCcw } from 'lucide-react';
+import { Camera, CameraOff, Sparkles, RefreshCw, CheckCircle2, Hand, Info, Minimize2, Maximize2, Zap, AlertCircle, Swords, Trophy, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
 export interface ActiveQuestionInfo {
@@ -97,6 +97,7 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isPermissionDenied, setIsPermissionDenied] = useState<boolean>(false);
   const [isCompact, setIsCompact] = useState<boolean>(false);
+  const [isToolbarCollapsed, setIsToolbarCollapsed] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [retryTrigger, setRetryTrigger] = useState<number>(0);
 
@@ -550,59 +551,108 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
   const optionsList = currentQuestion?.options || ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'];
 
   return (
-    <div className={`w-full flex-1 flex flex-col justify-between bg-slate-950/98 border-3 border-amber-400/90 rounded-3xl shadow-2xl relative overflow-hidden animate-in fade-in duration-300 ${
-      isFullscreen ? 'p-3 sm:p-5 min-h-[calc(100vh-60px)]' : 'p-3 sm:p-5 min-h-[720px]'
-    } space-y-3.5`}>
-      {/* 1. TOP HEADER & CONTROLS */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b-2 border-slate-700/80">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2.5 rounded-2xl bg-amber-400 text-slate-950 font-black border-2 border-amber-300 shadow-md animate-pulse">
-            <Camera className="w-6 h-6" />
+    <div className={`w-full flex-1 flex flex-col justify-between bg-slate-950/98 border-2 border-amber-400/80 rounded-3xl shadow-2xl relative overflow-hidden animate-in fade-in duration-300 ${
+      isFullscreen ? 'p-2 sm:p-3.5 min-h-[calc(100vh-40px)]' : 'p-3 sm:p-4 min-h-[700px]'
+    } space-y-2.5`}>
+      {/* 1. ULTRA-COMPACT TOP HEADER & CONTROLS */}
+      {isToolbarCollapsed ? (
+        <div className="flex items-center justify-between gap-2 pb-1 text-xs">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-900/90 border border-slate-700 text-amber-300 font-black text-xs">
+            <Camera className="w-3.5 h-3.5 text-amber-400" />
+            <span>📷 Camera AI: 1:A • 2:B • 3:C • 4:D</span>
           </div>
-          <div>
-            <h4 className="text-sm sm:text-base lg:text-lg font-black text-amber-300 uppercase tracking-wide flex items-center gap-2">
-              <span>📷 THI ĐẤU CỬ CHỈ CAMERA 2 ĐỘI (TOÀN MÀN HÌNH)</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 border border-emerald-300 text-xs font-black shadow-sm">
-                ⚡ Tốc độ: Đúng trước ghi điểm
-              </span>
-            </h4>
-            <p className="text-xs sm:text-sm font-extrabold text-amber-100/90">
-              1 ngón = A • 2 ngón = B • 3 ngón = C • 4 ngón = D <span className="text-amber-300 font-bold">(Giơ tay giữ {holdDurationMs / 1000}s để chọn)</span>
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          {onToggleFullscreen && (
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={onToggleFullscreen}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
-              title="Toàn màn hình"
+              onClick={() => setIsToolbarCollapsed(false)}
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all"
+              title="Mở rộng thanh công cụ"
             >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              <span>{isFullscreen ? 'Thu nhỏ' : '🖥️ Toàn màn hình'}</span>
+              <span>⚙️ Hiện thanh công cụ</span>
+              <ChevronDown className="w-3.5 h-3.5" />
             </button>
-          )}
 
-          <button
-            onClick={() => setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'))}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-black text-xs sm:text-sm flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Đổi camera trước / sau"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span className="hidden sm:inline">Đổi camera</span>
-          </button>
+            {onToggleFullscreen && (
+              <button
+                onClick={onToggleFullscreen}
+                className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center gap-1 shadow-sm active:scale-95 transition-all cursor-pointer"
+                title="Toàn màn hình"
+              >
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                <span>{isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'}</span>
+              </button>
+            )}
 
-          <button
-            onClick={onToggleCamera}
-            className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-            title="Tắt chế độ Camera"
-          >
-            <CameraOff className="w-4 h-4" />
-            <span>Tắt Camera</span>
-          </button>
+            <button
+              onClick={onToggleCamera}
+              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+              title="Tắt Camera"
+            >
+              <CameraOff className="w-3.5 h-3.5" />
+              <span>Tắt</span>
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-700/60">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-xl bg-amber-400 text-slate-950 font-black shadow-xs">
+              <Camera className="w-4 h-4" />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-xs sm:text-sm font-black text-amber-300 uppercase tracking-wide">
+                THI ĐẤU CAMERA 2 ĐỘI
+              </h4>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black">
+                ⚡ Đúng trước ghi điểm
+              </span>
+              <span className="text-[11px] text-amber-100/80 font-bold hidden md:inline">
+                (1:A • 2:B • 3:C • 4:D • Giữ {holdDurationMs / 1000}s)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setIsToolbarCollapsed(true)}
+              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all"
+              title="Thu gọn thanh công cụ"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Thu gọn</span>
+            </button>
+
+            {onToggleFullscreen && (
+              <button
+                onClick={onToggleFullscreen}
+                className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center gap-1 shadow-sm active:scale-95 transition-all cursor-pointer"
+                title="Toàn màn hình"
+              >
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                <span>{isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'}</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'))}
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer"
+              title="Đổi camera trước / sau"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Đổi camera</span>
+            </button>
+
+            <button
+              onClick={onToggleCamera}
+              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1 shadow-md transition-all cursor-pointer"
+              title="Tắt chế độ Camera"
+            >
+              <CameraOff className="w-3.5 h-3.5" />
+              <span>Tắt Camera</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Camera Loading or Error */}
       {isLoadingModel && (
