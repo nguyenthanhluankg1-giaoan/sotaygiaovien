@@ -1,0 +1,234 @@
+@import "tailwindcss";
+
+:root {
+  --primary-color: #0d9488;
+  --primary-dark: #0f766e;
+  --primary-light: #ccfbf1;
+  --secondary-color: #14b8a6;
+  --accent-color: #5eead4;
+  --teal-gradient: linear-gradient(135deg, #0d9488 0%, #14b8a6 50%, #5eead4 100%);
+  --teal-gradient-dark: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+  --shadow-3d: 0 8px 32px rgba(13, 148, 136, 0.22);
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, #ccfbf1 0%, #99f6e4 50%, #5eead4 100%);
+  min-height: 100vh;
+  min-height: 100dvh;
+  color: #1f2937;
+  overflow-x: hidden;
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+
+/* Touch-optimized horizontal scrolling containers */
+.touch-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Atmospheric decorative glowing spheres */
+.bg-sphere-1 {
+  position: fixed;
+  width: 420px;
+  height: 420px;
+  right: -140px;
+  top: 70px;
+  background: #fb7185;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-sphere-2 {
+  position: fixed;
+  width: 380px;
+  height: 380px;
+  left: -140px;
+  bottom: -60px;
+  background: #38bdf8;
+  border-radius: 50%;
+  filter: blur(75px);
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Custom animations for Lucky Wheel / Lồng cầu */
+@keyframes orbit {
+  0% { filter: hue-rotate(0deg); }
+  50% { transform: translate(-50%, -50%) scale(1.12) rotate(180deg); }
+  100% { filter: hue-rotate(360deg); transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes bounceBall {
+  from { transform: translate(-50%, -50%) scale(0.85); }
+  to { transform: translate(-50%, -68%) scale(1.15); }
+}
+
+@keyframes suckCenter {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) scale(0.72); }
+}
+
+@keyframes flyOrbit {
+  from { transform: translate(-70%, -35%) rotate(-18deg); }
+  to { transform: translate(-30%, -65%) rotate(18deg); }
+}
+
+@keyframes rainBall {
+  0% { transform: translate(-50%, -150%) scale(0.85); }
+  65% { transform: translate(-50%, 10%) scale(1.08); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes stageGlow {
+  from { box-shadow: inset 0 0 35px rgba(13, 148, 136, 0.2), 0 20px 35px rgba(13, 148, 136, 0.2); }
+  to { box-shadow: inset 0 0 70px rgba(251, 191, 36, 0.45), 0 0 45px rgba(139, 92, 246, 0.4); }
+}
+
+@keyframes spotlight {
+  from { filter: brightness(0.8); transform: translate(-50%, -50%) scale(0.9); }
+  to { filter: brightness(1.3); transform: translate(-50%, -50%) scale(1.15); }
+}
+
+@keyframes waveBall {
+  from { transform: translate(-50%, -60%) rotate(-8deg); }
+  to { transform: translate(-50%, -40%) rotate(8deg); }
+}
+
+.spinning-fx0 .wheel-ball-anim { animation: orbit 0.72s linear infinite; }
+.spinning-fx1 .wheel-ball-anim { animation: bounceBall 0.48s ease-in-out infinite alternate; }
+.spinning-fx2 .wheel-ball-anim { animation: suckCenter 0.82s ease-in-out infinite; }
+.spinning-fx3 .wheel-ball-anim { animation: flyOrbit 0.95s ease-in-out infinite alternate; }
+.spinning-fx4 .wheel-ball-anim { animation: rainBall 0.85s ease-in infinite; }
+.spinning-fx5 { animation: stageGlow 0.5s ease-in-out infinite alternate; }
+.spinning-fx5 .wheel-ball-anim { animation: spotlight 0.6s ease-in-out infinite alternate; }
+.spinning-fx6 .wheel-ball-anim { animation: waveBall 0.7s ease-in-out infinite alternate; }
+
+/* Custom Scrollbar for side panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #0d9488;
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f0fdfa;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(#0d9488, #5eead4);
+  border-radius: 4px;
+}
+
+/* A4 Paper Container Styling */
+.a4-paper-frame {
+  width: 100%;
+  max-width: 210mm; /* Standard A4 width */
+  min-height: 297mm; /* Standard A4 height */
+  margin: 0 auto;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.12), 0 0 2px 1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  position: relative;
+  transition: all 0.2s ease-in-out;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 10mm 12mm;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print, .print\:hidden {
+    display: none !important;
+  }
+  .a4-paper-frame {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: auto !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  .signature-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
+
+/* 3D Seating mode */
+.seating-3d-perspective {
+  perspective: 950px;
+}
+.seating-3d-container {
+  transform: rotateX(16deg);
+  transform-origin: top center;
+  margin-top: 10px;
+  transition: transform 0.4s ease;
+}
+.seating-3d-card {
+  box-shadow: 0 12px 20px rgba(15, 23, 42, 0.12);
+  transform: translateZ(8px);
+}

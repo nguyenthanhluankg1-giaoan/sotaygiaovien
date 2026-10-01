@@ -1,0 +1,150 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Account",
+      "description": "System user account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "teacher"] },
+        "password": { "type": "string" },
+        "subject": { "type": "string" },
+        "school": { "type": "string" },
+        "year": { "type": "string" },
+        "assignedClassIds": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "locked"] },
+        "avatar": { "type": "string" },
+        "phone": { "type": "string" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      },
+      "required": ["id", "username", "role", "name"]
+    },
+    "Workspace": {
+      "title": "Teacher Workspace State",
+      "description": "Classroom management workspace for a teacher",
+      "type": "object",
+      "properties": {
+        "version": { "type": "number" },
+        "ownerUserId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "activeClassId": { "type": "string" },
+        "teacher": { "type": "object" },
+        "classes": { "type": "array" },
+        "students": { "type": "array" },
+        "attendance": { "type": "object" },
+        "seating": { "type": "object" },
+        "timetable": { "type": "object" },
+        "rewards": { "type": "array" },
+        "redemptions": { "type": "array" },
+        "transactions": { "type": "array" },
+        "wheelHistory": { "type": "array" },
+        "filmHistory": { "type": "array" },
+        "links": { "type": "array" },
+        "subjects": { "type": "array" },
+        "settings": { "type": "object" },
+        "quizQuestions": { "type": "array" },
+        "questionFolders": { "type": "array" }
+      },
+      "required": ["version", "updatedAt"]
+    },
+    "KhdhData": {
+      "title": "KHDH Data",
+      "description": "Teaching schedule and syllabus distribution data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "config": { "type": "object" },
+        "ppctList": { "type": "array" },
+        "timetable": { "type": "array" },
+        "customizedWeeks": { "type": "object" },
+        "configuredClasses": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "updatedAt"]
+    },
+    "LessonPlanLibrary": {
+      "title": "Lesson Plan Library",
+      "description": "Collection of saved AI lesson plans per teacher",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "plans": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "updatedAt"]
+    },
+    "SystemConfig": {
+      "title": "System Configuration",
+      "description": "Global system parameters and branding",
+      "type": "object",
+      "properties": {
+        "schoolLogo": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ClassesData": {
+      "title": "Classes and Students Data",
+      "description": "Classes and student roster per teacher",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "classes": { "type": "array" },
+        "students": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "updatedAt"]
+    },
+    "TugOfWarRoom": {
+      "title": "Tug of War Game Room",
+      "description": "Real-time multiplayer Tug of War game state",
+      "type": "object",
+      "properties": {
+        "isQuestionStarted": { "type": "boolean" },
+        "matchQuestions": { "type": "array" },
+        "redScore": { "type": "number" },
+        "blueScore": { "type": "number" },
+        "ropePosition": { "type": "number" },
+        "updatedBy": { "type": "string" },
+        "lastUpdated": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of system user accounts"
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": "Workspace",
+      "description": "Collection of teacher workspace application states"
+    },
+    "/classes_data/{userId}": {
+      "schema": "ClassesData",
+      "description": "Dedicated collection for teacher classes and student lists"
+    },
+    "/khdh_data/{userId}": {
+      "schema": "KhdhData",
+      "description": "Teaching schedule & PPCT data per user"
+    },
+    "/lesson_plans/{userId}": {
+      "schema": "LessonPlanLibrary",
+      "description": "Saved lesson plans library per user"
+    },
+    "/system/{docId}": {
+      "schema": "SystemConfig",
+      "description": "Global system configurations"
+    },
+    "/tug_of_war_rooms/{roomId}": {
+      "schema": "TugOfWarRoom",
+      "description": "Real-time game room state for Tug-of-War"
+    }
+  }
+}

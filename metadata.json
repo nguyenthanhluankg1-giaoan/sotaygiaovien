@@ -1,0 +1,6 @@
+{
+  "name": "Lớp Học Thông Minh",
+  "description": "Bảng điều khiển giáo viên quản lý lớp học, thi đua tích xu, điểm danh, sơ đồ lớp, thời khóa biểu, vòng quay may mắn, cuộn phim, chống ồn và đếm ngược.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
