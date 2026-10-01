@@ -1897,6 +1897,8 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             currentBlueQuestionIdx={blueQuestionIdx}
             holdDurationMs={cameraHoldDuration}
             onToggleCamera={() => setIsCameraGestureEnabled(false)}
+            onStartMatch={startRandomQuestion}
+            onToggleFullscreen={toggleFullscreen}
             currentQuestion={matchQuestions[redQuestionIdx] || matchQuestions[0] || null}
             redScore={redScore}
             blueScore={blueScore}

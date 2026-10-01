@@ -25,6 +25,8 @@ interface CameraGestureDualZoneProps {
   currentBlueQuestionIdx: number;
   holdDurationMs?: number; // Time in ms to confirm gesture (default: 800ms)
   onToggleCamera: () => void;
+  onStartMatch?: () => void;
+  onToggleFullscreen?: () => void;
   // Question & Match Data for Full Camera Battle Mode
   currentQuestion?: ActiveQuestionInfo | null;
   redScore: number;
@@ -68,6 +70,8 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
   currentBlueQuestionIdx,
   holdDurationMs = 800,
   onToggleCamera,
+  onStartMatch,
+  onToggleFullscreen,
   currentQuestion,
   redScore,
   blueScore,
@@ -546,42 +550,55 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
   const optionsList = currentQuestion?.options || ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'];
 
   return (
-    <div className="bg-slate-900/95 border-2 border-amber-400/80 rounded-3xl p-3 sm:p-5 shadow-2xl space-y-4 relative overflow-hidden animate-in fade-in duration-300">
+    <div className={`w-full flex-1 flex flex-col justify-between bg-slate-950/98 border-3 border-amber-400/90 rounded-3xl shadow-2xl relative overflow-hidden animate-in fade-in duration-300 ${
+      isFullscreen ? 'p-3 sm:p-5 min-h-[calc(100vh-60px)]' : 'p-3 sm:p-5 min-h-[720px]'
+    } space-y-3.5`}>
       {/* 1. TOP HEADER & CONTROLS */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-700/80">
-        <div className="flex items-center gap-2">
-          <div className="p-2 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/40 animate-pulse">
-            <Camera className="w-5 h-5" />
+      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b-2 border-slate-700/80">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2.5 rounded-2xl bg-amber-400 text-slate-950 font-black border-2 border-amber-300 shadow-md animate-pulse">
+            <Camera className="w-6 h-6" />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-black text-amber-300 uppercase tracking-wide flex items-center gap-2">
-              <span>📷 THI ĐẤU BẰNG CỬ CHỈ CAMERA (CHẾ ĐỘ TỐC ĐỘ 2 ĐỘI)</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold">
-                ⚡ Đội Đúng Trước Được Điểm
+            <h4 className="text-sm sm:text-base lg:text-lg font-black text-amber-300 uppercase tracking-wide flex items-center gap-2">
+              <span>📷 THI ĐẤU CỬ CHỈ CAMERA 2 ĐỘI (TOÀN MÀN HÌNH)</span>
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 border border-emerald-300 text-xs font-black shadow-sm">
+                ⚡ Tốc độ: Đúng trước ghi điểm
               </span>
             </h4>
-            <p className="text-[11px] text-slate-400">
-              1 ngón = A • 2 ngón = B • 3 ngón = C • 4 ngón = D (Giơ tay giữ 0.8s để chốt)
+            <p className="text-xs sm:text-sm font-extrabold text-amber-100/90">
+              1 ngón = A • 2 ngón = B • 3 ngón = C • 4 ngón = D <span className="text-amber-300 font-bold">(Giơ tay giữ {holdDurationMs / 1000}s để chọn)</span>
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          {onToggleFullscreen && (
+            <button
+              onClick={onToggleFullscreen}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
+              title="Toàn màn hình"
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              <span>{isFullscreen ? 'Thu nhỏ' : '🖥️ Toàn màn hình'}</span>
+            </button>
+          )}
+
           <button
             onClick={() => setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'))}
-            className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer"
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-black text-xs sm:text-sm flex items-center gap-1.5 transition-all cursor-pointer"
             title="Đổi camera trước / sau"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-4 h-4" />
             <span className="hidden sm:inline">Đổi camera</span>
           </button>
 
           <button
             onClick={onToggleCamera}
-            className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1 transition-all shadow-md cursor-pointer"
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
             title="Tắt chế độ Camera"
           >
-            <CameraOff className="w-3.5 h-3.5" />
+            <CameraOff className="w-4 h-4" />
             <span>Tắt Camera</span>
           </button>
         </div>
@@ -589,62 +606,54 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
 
       {/* Camera Loading or Error */}
       {isLoadingModel && (
-        <div className="py-6 text-center text-amber-300 flex items-center justify-center gap-2 font-bold text-xs animate-pulse">
-          <Sparkles className="w-4 h-4 animate-spin" />
-          <span>Đang tải mô hình nhận diện tay AI MediaPipe... Vui lòng chờ 2 giây</span>
+        <div className="py-6 text-center text-amber-300 flex items-center justify-center gap-2 font-black text-sm animate-pulse bg-slate-900/90 rounded-2xl border border-amber-400/40">
+          <Sparkles className="w-5 h-5 animate-spin text-amber-300" />
+          <span>Đang kích hoạt mô hình AI nhận diện cử chỉ MediaPipe... Vui lòng chờ 2 giây</span>
         </div>
       )}
 
       {cameraError && (
-        <div className="p-4 rounded-2xl bg-rose-950/90 border-2 border-rose-500/80 text-white text-xs space-y-3 shadow-xl">
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+        <div className="p-4 rounded-2xl bg-rose-950/95 border-3 border-rose-500 text-white text-xs sm:text-sm space-y-3 shadow-2xl">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-6 h-6 text-rose-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <h5 className="font-black text-rose-200 text-sm">
+              <h5 className="font-black text-rose-200 text-base">
                 {isPermissionDenied ? '⚠️ Trình duyệt chưa cấp quyền truy cập Camera' : '⚠️ Lỗi truy cập Camera'}
               </h5>
-              <p className="text-rose-100/90 text-[11px] leading-relaxed">
+              <p className="text-rose-100/90 leading-relaxed font-bold">
                 {cameraError}
               </p>
             </div>
           </div>
 
-          {/* Step-by-step instruction for unlocking permission */}
           {isPermissionDenied && (
-            <div className="p-3 rounded-xl bg-slate-900/90 border border-amber-400/40 text-amber-200 text-[11px] space-y-1.5">
+            <div className="p-3.5 rounded-xl bg-slate-900/95 border border-amber-400/60 text-amber-200 text-xs sm:text-sm space-y-1.5">
               <div className="font-black text-amber-300 flex items-center gap-1.5">
                 <span>💡 Cách bật quyền Camera (Rất nhanh):</span>
               </div>
-              <ol className="list-decimal list-inside space-y-1 text-slate-200">
-                <li>
-                  Bấm vào biểu tượng <strong>Ổ khóa 🔒</strong> hoặc <strong>Camera 📷</strong> ở đầu thanh địa chỉ trình duyệt (Address Bar).
-                </li>
-                <li>
-                  Tại mục <strong>Máy ảnh / Camera</strong>, chuyển sang <strong>Cho phép (Allow)</strong>.
-                </li>
-                <li>
-                  Bấm nút <strong>"🔄 Thử cấp quyền lại"</strong> bên dưới.
-                </li>
+              <ol className="list-decimal list-inside space-y-1 text-slate-100 font-bold">
+                <li>Bấm vào biểu tượng <strong>Ổ khóa 🔒</strong> hoặc <strong>Camera 📷</strong> ở đầu thanh địa chỉ trình duyệt.</li>
+                <li>Tại mục <strong>Máy ảnh / Camera</strong>, chuyển sang <strong>Cho phép (Allow)</strong>.</li>
+                <li>Bấm nút <strong>"🔄 Thử cấp quyền lại"</strong> bên dưới.</li>
               </ol>
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
             <button
               onClick={() => {
                 setCameraError(null);
                 setRetryTrigger((prev) => prev + 1);
               }}
-              className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className="w-4 h-4" />
               <span>🔄 Thử cấp quyền lại</span>
             </button>
 
             <button
               onClick={onToggleCamera}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-xs sm:text-sm flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <span>🎮 Tạm tắt Camera & chơi bằng Chuột / Cảm ứng</span>
             </button>
@@ -652,65 +661,84 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
         </div>
       )}
 
-      {/* ================= 2. KHUNG CÂU HỎI NẰM PHÍA TRÊN CAMERA ================= */}
+      {/* ================= 2. KHUNG CÂU HỎI NẰM PHÍA TRÊN CAMERA (SIÊU NỔI BẬT) ================= */}
       {isQuestionStarted && currentQuestion ? (
-        <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-rose-950/80 to-slate-900 border-2 border-amber-400/70 p-4 sm:p-5 shadow-2xl space-y-2 text-center relative overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
-            <span className="px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-md">
+        <div className="rounded-3xl bg-gradient-to-r from-blue-950 via-slate-900 to-rose-950 border-3 border-amber-400/90 p-4 sm:p-6 shadow-2xl space-y-3 text-center relative overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/20 pb-2.5">
+            <span className="px-4 py-1.5 rounded-full bg-amber-400 text-slate-950 font-black text-sm sm:text-base flex items-center gap-1.5 shadow-lg animate-pulse">
               <Zap className="w-4 h-4 fill-current" />
               <span>CÂU {redAnswerCount + 1}/{questionsPerMatch > 0 ? questionsPerMatch : '∞'}</span>
             </span>
 
-            <span className="px-3 py-1 rounded-full bg-slate-800 border border-amber-400/40 text-amber-300 font-black text-xs">
-              🎯 Đội nào giơ đúng trước sẽ ghi điểm & kéo dây!
+            <span className="px-3.5 py-1 rounded-full bg-slate-900/90 border border-amber-400 text-amber-300 font-black text-xs sm:text-sm shadow-md">
+              🎯 Đội giơ ngón tay đúng trước được +1 điểm & Kéo dây!
             </span>
 
-            <span className="px-3 py-1 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 font-extrabold text-xs">
+            <span className="px-3.5 py-1 rounded-full bg-teal-500/30 text-teal-200 border border-teal-400 font-black text-xs sm:text-sm">
               📚 {currentQuestion.subject || 'Tổng hợp'}
             </span>
           </div>
 
-          <h3 className="text-base sm:text-2xl font-black text-white leading-relaxed px-2 py-1 drop-shadow-md">
-            {currentQuestion.question}
-          </h3>
+          <div className="p-3 sm:p-4 rounded-2xl bg-black/40 border border-white/15 backdrop-blur-xs">
+            <h3 className="text-xl sm:text-3xl lg:text-4xl font-black text-amber-200 leading-snug drop-shadow-lg tracking-wide">
+              {currentQuestion.question}
+            </h3>
+          </div>
 
           {/* Realtime Action Score Notice */}
           {scoreNotice && (
-            <div className="py-1 px-3 rounded-full bg-slate-950/80 border border-slate-700 text-amber-300 text-xs font-bold inline-block animate-pulse">
+            <div className="py-1 px-4 rounded-full bg-slate-950/90 border-2 border-amber-400 text-amber-300 text-xs sm:text-sm font-black inline-block animate-bounce shadow-xl">
               {scoreNotice}
             </div>
           )}
         </div>
       ) : (
-        <div className="py-4 text-center text-amber-300 font-bold text-sm bg-slate-950/60 rounded-2xl border border-slate-700">
-          ⏳ Vui lòng chờ Giáo viên bấm "▶️ BẮT ĐẦU TRẬN ĐẤU" để mở câu hỏi...
+        <div className="py-6 sm:py-8 text-center bg-gradient-to-r from-sky-950/90 via-slate-900 to-rose-950/90 rounded-3xl border-3 border-amber-400/80 shadow-2xl space-y-3 px-4">
+          <div className="w-16 h-16 mx-auto rounded-full bg-amber-400/20 border-2 border-amber-400 flex items-center justify-center animate-bounce">
+            <Zap className="w-8 h-8 text-amber-300 fill-current" />
+          </div>
+          <h3 className="text-lg sm:text-2xl font-black text-amber-300 uppercase tracking-wide">
+            🏆 SẴN SÀNG TRẬN ĐẤU KÉO CO CAMERA ({questionsPerMatch > 0 ? `${questionsPerMatch} CÂU` : 'VÔ HẠN'})
+          </h3>
+          <p className="text-xs sm:text-sm font-extrabold text-slate-200 max-w-lg mx-auto">
+            Người chơi 2 đội đứng trước Camera: 🔵 Đội Xanh (bên trái) và 🔴 Đội Đỏ (bên phải).
+          </p>
+          {deviceTeam === 'teacher' && onStartMatch && (
+            <button
+              onClick={onStartMatch}
+              className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-base sm:text-xl shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-2.5 mx-auto ring-4 ring-amber-300/50"
+            >
+              <Zap className="w-6 h-6 fill-current" />
+              <span>▶️ BẮT ĐẦU TRẬN ĐẤU NGAY</span>
+            </button>
+          )}
         </div>
       )}
 
       {/* ================= 3. BỐ CỤC 3 CỘT: 2 CỘT ĐÁP ÁN CHẠY DỌC 2 BÊN + CAMERA Ở GIỮA ================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
-        {/* ================= CỘT TRÁI: 🔵 ĐỘI XANH (4 ĐÁP ÁN DỌC) ================= */}
-        <div className="lg:col-span-3 bg-gradient-to-b from-[#1e293b] to-[#0f172a] border-2 border-sky-500/70 rounded-3xl p-3 sm:p-4 flex flex-col justify-between shadow-xl space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-stretch flex-1">
+        {/* ================= CỘT TRÁI: 🔵 ĐỘI XANH (4 ĐÁP ÁN DỌC SIÊU NỔI BẬT) ================= */}
+        <div className="lg:col-span-3 bg-gradient-to-b from-[#0369a1]/90 via-[#075985]/90 to-[#082f49]/95 border-3 border-sky-400 rounded-3xl p-3 sm:p-4 flex flex-col justify-between shadow-2xl space-y-3">
           {/* Header */}
-          <div className="flex items-center justify-between pb-2 border-b border-sky-500/30">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-sky-400 animate-ping"></span>
-              <h4 className="font-black text-sm sm:text-base text-sky-200 uppercase">🔵 Đội Xanh</h4>
+          <div className="flex items-center justify-between pb-2.5 border-b-2 border-sky-300/40">
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded-full bg-sky-300 animate-ping"></span>
+              <h4 className="font-black text-base sm:text-xl text-white uppercase tracking-wider">🔵 Đội Xanh</h4>
             </div>
-            <span className="px-2.5 py-0.5 rounded-xl bg-amber-400 text-slate-950 font-black text-sm shadow-md">
+            <span className="px-3 py-1 rounded-2xl bg-amber-400 text-slate-950 font-black text-base sm:text-lg shadow-lg">
               {blueScore} điểm
             </span>
           </div>
 
           {/* Speed Status Badge */}
           {speedAttemptedBlue && (
-            <div className="py-1 px-2 rounded-xl bg-rose-950/80 text-rose-300 border border-rose-500/50 text-center text-[11px] font-bold">
+            <div className="py-1.5 px-2.5 rounded-xl bg-rose-950 text-rose-200 border-2 border-rose-500 text-center text-xs font-black shadow-md">
               ❌ Đội Xanh đã trả lời sai câu này
             </div>
           )}
 
-          {/* 4 Vertical Option Cards */}
-          <div className="space-y-2.5 flex-1 flex flex-col justify-around">
+          {/* 4 Vertical Option Cards (Large Font, Ultra High Contrast) */}
+          <div className="space-y-2.5 sm:space-y-3 flex-1 flex flex-col justify-around">
             {optionsList.map((opt, idx) => {
               const isGestureTarget = blueGesture.optionIdx === idx;
               const isSelected = blueSelectedOption?.idx === idx;
@@ -729,40 +757,43 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
                   key={idx}
                   onClick={() => onBlueAnswer(idx)}
                   disabled={isDisabled}
-                  className={`w-full p-3 rounded-2xl border-2 text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                  className={`w-full p-3 sm:p-4 rounded-2xl border-3 text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[75px] sm:min-h-[90px] lg:min-h-[105px] ${
                     isDisabled
-                      ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-700 text-slate-400'
+                      ? 'opacity-40 cursor-not-allowed bg-slate-900/90 border-slate-700 text-slate-400'
                       : 'cursor-pointer active:scale-98'
                   } ${
                     isCorrect
-                      ? 'bg-emerald-600 border-emerald-300 text-white shadow-emerald-500/50 ring-4 ring-emerald-400/50 animate-pulse'
+                      ? 'bg-emerald-600 border-emerald-300 text-white shadow-2xl ring-4 ring-emerald-300/80 animate-pulse'
                       : isWrong
-                      ? 'bg-rose-700 border-rose-400 text-white shadow-rose-600/50'
+                      ? 'bg-rose-700 border-rose-300 text-white shadow-2xl'
                       : isGestureTarget && blueProgress > 0 && !blueSelectedOption
-                      ? 'bg-sky-950/90 border-amber-400 ring-2 ring-amber-300 shadow-lg'
-                      : 'bg-slate-800/90 hover:bg-sky-950/60 border-slate-700 text-slate-200 hover:border-sky-400'
+                      ? 'bg-sky-950 border-amber-300 ring-4 ring-amber-300/70 shadow-2xl scale-[1.02]'
+                      : 'bg-gradient-to-br from-[#0284c7] to-[#0369a1] hover:from-[#0369a1] hover:to-[#075985] border-sky-300/90 text-white shadow-xl hover:border-white'
                   }`}
                 >
                   {/* Option Label & Gesture Icon */}
                   <div className="flex items-center justify-between w-full mb-1">
-                    <span className="font-black text-xs sm:text-sm text-sky-300 flex items-center gap-1.5">
-                      <span className="text-base">{GESTURE_ICONS[idx]}</span>
+                    <span className="font-black text-xs sm:text-sm lg:text-base px-2.5 py-0.5 rounded-xl bg-sky-950/80 text-amber-300 border border-sky-300/60 flex items-center gap-1.5 shadow-sm">
+                      <span className="text-base sm:text-lg">{GESTURE_ICONS[idx]}</span>
                       <span>Đáp án {OPTION_LETTERS[idx]}</span>
                     </span>
                     {isGestureTarget && blueProgress > 0 && !blueSelectedOption && (
-                      <span className="text-[11px] font-black text-amber-300">{blueProgress}%</span>
+                      <span className="text-xs sm:text-sm font-black px-2 py-0.5 rounded-lg bg-amber-400 text-slate-950 shadow-md">
+                        {blueProgress}%
+                      </span>
                     )}
                   </div>
 
-                  <p className="text-xs sm:text-sm font-extrabold text-white leading-snug line-clamp-2">
+                  {/* High Contrast Option Text */}
+                  <p className="text-sm sm:text-base lg:text-lg font-black text-white leading-snug drop-shadow-md line-clamp-3">
                     {opt}
                   </p>
 
                   {/* Hold Progress Bar inside option button */}
                   {isGestureTarget && blueProgress > 0 && !blueSelectedOption && (
-                    <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden mt-1.5 border border-sky-400/40">
+                    <div className="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden mt-2 border-2 border-amber-300">
                       <div
-                        className="h-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-75"
+                        className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-75"
                         style={{ width: `${blueProgress}%` }}
                       />
                     </div>
@@ -776,7 +807,7 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
         {/* ================= CỘT GIỮA: CAMERA DUAL ZONE (TOÀN MÀN HÌNH CAMERA) ================= */}
         <div className="lg:col-span-6 flex flex-col justify-between space-y-3">
           {/* Main Dual Zone Full-Height Camera Viewfinder */}
-          <div className="relative rounded-3xl overflow-hidden bg-slate-950 border-2 border-slate-700 shadow-2xl flex-1 min-h-[380px] sm:min-h-[460px] flex flex-col justify-between">
+          <div className="relative rounded-3xl overflow-hidden bg-slate-950 border-3 border-slate-700 shadow-2xl flex-1 min-h-[440px] sm:min-h-[520px] lg:min-h-[580px] flex flex-col justify-between">
             {/* Hidden Raw Video (Used for MediaPipe Frame Processing) */}
             <video
               ref={videoRef}
@@ -795,14 +826,14 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
             {/* Dynamic Zone Overlays */}
             <div className="absolute inset-0 z-20 pointer-events-none flex">
               {/* Left Zone: Blue */}
-              <div className="flex-1 p-2.5 sm:p-3.5 flex flex-col justify-between border-r-2 border-dashed border-white/40 bg-sky-950/10">
+              <div className="flex-1 p-3 sm:p-4 flex flex-col justify-between border-r-3 border-dashed border-white/50 bg-sky-950/15">
                 <div className="flex items-center justify-between">
-                  <span className="px-2.5 py-1 rounded-xl bg-sky-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
+                  <span className="px-3 py-1 rounded-xl bg-sky-600 text-white font-black text-xs sm:text-sm shadow-xl border border-sky-300/50 flex items-center gap-1.5">
                     <span>🔵 ĐỘI XANH</span>
                   </span>
 
                   {blueGesture.optionIdx !== null && (
-                    <span className="px-2.5 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs shadow-lg animate-bounce">
+                    <span className="px-3 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs sm:text-sm shadow-2xl animate-bounce border border-amber-300">
                       {GESTURE_EMOJIS[blueGesture.fingers] || '✋'}
                     </span>
                   )}
@@ -810,22 +841,22 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
 
                 {/* Bottom Status */}
                 {blueConfirmedOpt !== null && (
-                  <div className="px-3 py-1.5 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg animate-pulse max-w-[200px]">
-                    <CheckCircle2 className="w-4 h-4" />
+                  <div className="px-3.5 py-2 rounded-2xl bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-2xl animate-pulse max-w-[220px] border-2 border-emerald-300">
+                    <CheckCircle2 className="w-5 h-5" />
                     <span>ĐÃ CHỌN {OPTION_LETTERS[blueConfirmedOpt]}!</span>
                   </div>
                 )}
               </div>
 
               {/* Right Zone: Red */}
-              <div className="flex-1 p-2.5 sm:p-3.5 flex flex-col justify-between bg-rose-950/10">
+              <div className="flex-1 p-3 sm:p-4 flex flex-col justify-between bg-rose-950/15">
                 <div className="flex items-center justify-between">
-                  <span className="px-2.5 py-1 rounded-xl bg-rose-600/90 text-white font-black text-xs shadow-md backdrop-blur-xs flex items-center gap-1">
+                  <span className="px-3 py-1 rounded-xl bg-rose-600 text-white font-black text-xs sm:text-sm shadow-xl border border-rose-300/50 flex items-center gap-1.5">
                     <span>🔴 ĐỘI ĐỎ</span>
                   </span>
 
                   {redGesture.optionIdx !== null && (
-                    <span className="px-2.5 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs shadow-lg animate-bounce">
+                    <span className="px-3 py-1 rounded-xl bg-amber-400 text-slate-950 font-black text-xs sm:text-sm shadow-2xl animate-bounce border border-amber-300">
                       {GESTURE_EMOJIS[redGesture.fingers] || '✋'}
                     </span>
                   )}
@@ -833,8 +864,8 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
 
                 {/* Bottom Status */}
                 {redConfirmedOpt !== null && (
-                  <div className="px-3 py-1.5 rounded-xl bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg animate-pulse max-w-[200px] ml-auto">
-                    <CheckCircle2 className="w-4 h-4" />
+                  <div className="px-3.5 py-2 rounded-2xl bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-2xl animate-pulse max-w-[220px] ml-auto border-2 border-emerald-300">
+                    <CheckCircle2 className="w-5 h-5" />
                     <span>ĐÃ CHỌN {OPTION_LETTERS[redConfirmedOpt]}!</span>
                   </div>
                 )}
@@ -843,33 +874,33 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
           </div>
 
           {/* Sleek Live Tug-of-War HUD Rope Position Gauge */}
-          <div className="bg-slate-950/95 border-2 border-slate-700/80 rounded-2xl p-2.5 sm:p-3 shadow-lg space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] sm:text-xs font-black">
-              <span className="text-sky-400 flex items-center gap-1">
+          <div className="bg-slate-950/95 border-3 border-slate-700/90 rounded-2xl p-3 shadow-2xl space-y-2">
+            <div className="flex items-center justify-between text-xs sm:text-sm font-black">
+              <span className="text-sky-400 flex items-center gap-1.5">
                 <span>🔵 Đích Xanh</span>
-                <span className="text-[10px] font-bold text-slate-400">(-80px)</span>
+                <span className="text-[11px] font-bold text-slate-300">(-80px)</span>
               </span>
-              <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black ${
+              <span className={`px-3 py-1 rounded-xl text-xs sm:text-sm font-black ${
                 ropePosition < 0
-                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 animate-pulse'
+                  ? 'bg-sky-500/30 text-sky-200 border-2 border-sky-400 animate-pulse shadow-md'
                   : ropePosition > 0
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
-                  : 'bg-slate-800 text-slate-300'
+                  ? 'bg-rose-500/30 text-rose-200 border-2 border-rose-400 animate-pulse shadow-md'
+                  : 'bg-slate-800 text-slate-200 border border-slate-600'
               }`}>
                 {ropePosition < 0 ? `👈 Xanh đang kéo dây +${Math.abs(ropePosition)}px` : ropePosition > 0 ? `Đỏ đang kéo dây +${ropePosition}px 👉` : '⚖️ Vạch giữa cân bằng (0px)'}
               </span>
-              <span className="text-rose-400 flex items-center gap-1">
-                <span className="text-[10px] font-bold text-slate-400">(+80px)</span>
+              <span className="text-rose-400 flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-300">(+80px)</span>
                 <span>🔴 Đích Đỏ</span>
               </span>
             </div>
 
             {/* Visual Rope Bar with Animated Ribbon Marker */}
-            <div className="relative h-6 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden flex items-center">
+            <div className="relative h-7 rounded-xl bg-slate-900 border-2 border-slate-700 overflow-hidden flex items-center">
               {/* Rope Background Pattern */}
-              <div className="absolute inset-0 bg-gradient-to-r from-sky-950/40 via-amber-950/30 to-rose-950/40" />
+              <div className="absolute inset-0 bg-gradient-to-r from-sky-950/60 via-amber-950/40 to-rose-950/60" />
               {/* Center Target Line */}
-              <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-emerald-400/80 z-10 -translate-x-1/2" />
+              <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-emerald-400 z-10 -translate-x-1/2 shadow-xs" />
               
               {/* Animated Moving Tug Knot / Red Ribbon */}
               <div
@@ -878,7 +909,7 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
                   left: `${Math.max(10, Math.min(90, 50 + (ropePosition / 80) * 40))}%`
                 }}
               >
-                <div className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] shadow-lg flex items-center gap-1 ring-2 ring-amber-300">
+                <div className="px-3 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-xs shadow-xl flex items-center gap-1.5 ring-2 ring-amber-300">
                   <span>🎀 Dây Kéo</span>
                   <span>({ropePosition > 0 ? `+${ropePosition}` : ropePosition < 0 ? `${ropePosition}` : '0'}px)</span>
                 </div>
@@ -886,35 +917,35 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
             </div>
 
             {matchWinner && (
-              <div className="rounded-2xl bg-amber-400 text-slate-950 font-black text-center p-3 text-sm sm:text-base animate-bounce shadow-2xl mt-1">
+              <div className="rounded-2xl bg-amber-400 text-slate-950 font-black text-center p-3.5 text-base sm:text-xl animate-bounce shadow-2xl mt-1 ring-4 ring-amber-300/60">
                 🏆 {matchWinner === 'red' ? '🔴 ĐỘI ĐỎ CHIẾN THẮNG!' : '🔵 ĐỘI XANH CHIẾN THẮNG!'}
               </div>
             )}
           </div>
         </div>
 
-        {/* ================= CỘT PHẢI: 🔴 ĐỘI ĐỎ (4 ĐÁP ÁN DỌC) ================= */}
-        <div className="lg:col-span-3 bg-gradient-to-b from-[#450a0a] to-[#180505] border-2 border-rose-500/70 rounded-3xl p-3 sm:p-4 flex flex-col justify-between shadow-xl space-y-3">
+        {/* ================= CỘT PHẢI: 🔴 ĐỘI ĐỎ (4 ĐÁP ÁN DỌC SIÊU NỔI BẬT) ================= */}
+        <div className="lg:col-span-3 bg-gradient-to-b from-[#be123c]/90 via-[#9f1239]/90 to-[#4c0519]/95 border-3 border-rose-400 rounded-3xl p-3 sm:p-4 flex flex-col justify-between shadow-2xl space-y-3">
           {/* Header */}
-          <div className="flex items-center justify-between pb-2 border-b border-rose-500/30">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></span>
-              <h4 className="font-black text-sm sm:text-base text-rose-200 uppercase">🔴 Đội Đỏ</h4>
+          <div className="flex items-center justify-between pb-2.5 border-b-2 border-rose-300/40">
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded-full bg-rose-300 animate-ping"></span>
+              <h4 className="font-black text-base sm:text-xl text-white uppercase tracking-wider">🔴 Đội Đỏ</h4>
             </div>
-            <span className="px-2.5 py-0.5 rounded-xl bg-amber-400 text-slate-950 font-black text-sm shadow-md">
+            <span className="px-3 py-1 rounded-2xl bg-amber-400 text-slate-950 font-black text-base sm:text-lg shadow-lg">
               {redScore} điểm
             </span>
           </div>
 
           {/* Speed Status Badge */}
           {speedAttemptedRed && (
-            <div className="py-1 px-2 rounded-xl bg-rose-900/90 text-rose-200 border border-rose-500/50 text-center text-[11px] font-bold">
+            <div className="py-1.5 px-2.5 rounded-xl bg-rose-950 text-rose-200 border-2 border-rose-500 text-center text-xs font-black shadow-md">
               ❌ Đội Đỏ đã trả lời sai câu này
             </div>
           )}
 
-          {/* 4 Vertical Option Cards */}
-          <div className="space-y-2.5 flex-1 flex flex-col justify-around">
+          {/* 4 Vertical Option Cards (Large Font, Ultra High Contrast) */}
+          <div className="space-y-2.5 sm:space-y-3 flex-1 flex flex-col justify-around">
             {optionsList.map((opt, idx) => {
               const isGestureTarget = redGesture.optionIdx === idx;
               const isSelected = redSelectedOption?.idx === idx;
@@ -933,40 +964,43 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
                   key={idx}
                   onClick={() => onRedAnswer(idx)}
                   disabled={isDisabled}
-                  className={`w-full p-3 rounded-2xl border-2 text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                  className={`w-full p-3 sm:p-4 rounded-2xl border-3 text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[75px] sm:min-h-[90px] lg:min-h-[105px] ${
                     isDisabled
-                      ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-700 text-slate-400'
+                      ? 'opacity-40 cursor-not-allowed bg-slate-900/90 border-slate-700 text-slate-400'
                       : 'cursor-pointer active:scale-98'
                   } ${
                     isCorrect
-                      ? 'bg-emerald-600 border-emerald-300 text-white shadow-emerald-500/50 ring-4 ring-emerald-400/50 animate-pulse'
+                      ? 'bg-emerald-600 border-emerald-300 text-white shadow-2xl ring-4 ring-emerald-300/80 animate-pulse'
                       : isWrong
-                      ? 'bg-rose-700 border-rose-400 text-white shadow-rose-600/50'
+                      ? 'bg-rose-700 border-rose-300 text-white shadow-2xl'
                       : isGestureTarget && redProgress > 0 && !redSelectedOption
-                      ? 'bg-rose-950/90 border-amber-400 ring-2 ring-amber-300 shadow-lg'
-                      : 'bg-slate-800/90 hover:bg-rose-950/60 border-slate-700 text-slate-200 hover:border-rose-400'
+                      ? 'bg-rose-950 border-amber-300 ring-4 ring-amber-300/70 shadow-2xl scale-[1.02]'
+                      : 'bg-gradient-to-br from-[#e11d48] to-[#be123c] hover:from-[#be123c] hover:to-[#9f1239] border-rose-300/90 text-white shadow-xl hover:border-white'
                   }`}
                 >
                   {/* Option Label & Gesture Icon */}
                   <div className="flex items-center justify-between w-full mb-1">
-                    <span className="font-black text-xs sm:text-sm text-rose-300 flex items-center gap-1.5">
-                      <span className="text-base">{GESTURE_ICONS[idx]}</span>
+                    <span className="font-black text-xs sm:text-sm lg:text-base px-2.5 py-0.5 rounded-xl bg-rose-950/80 text-amber-300 border border-rose-300/60 flex items-center gap-1.5 shadow-sm">
+                      <span className="text-base sm:text-lg">{GESTURE_ICONS[idx]}</span>
                       <span>Đáp án {OPTION_LETTERS[idx]}</span>
                     </span>
                     {isGestureTarget && redProgress > 0 && !redSelectedOption && (
-                      <span className="text-[11px] font-black text-amber-300">{redProgress}%</span>
+                      <span className="text-xs sm:text-sm font-black px-2 py-0.5 rounded-lg bg-amber-400 text-slate-950 shadow-md">
+                        {redProgress}%
+                      </span>
                     )}
                   </div>
 
-                  <p className="text-xs sm:text-sm font-extrabold text-white leading-snug line-clamp-2">
+                  {/* High Contrast Option Text */}
+                  <p className="text-sm sm:text-base lg:text-lg font-black text-white leading-snug drop-shadow-md line-clamp-3">
                     {opt}
                   </p>
 
                   {/* Hold Progress Bar inside option button */}
                   {isGestureTarget && redProgress > 0 && !redSelectedOption && (
-                    <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden mt-1.5 border border-rose-400/40">
+                    <div className="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden mt-2 border-2 border-amber-300">
                       <div
-                        className="h-full bg-gradient-to-r from-rose-400 to-emerald-400 transition-all duration-75"
+                        className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-75"
                         style={{ width: `${redProgress}%` }}
                       />
                     </div>
