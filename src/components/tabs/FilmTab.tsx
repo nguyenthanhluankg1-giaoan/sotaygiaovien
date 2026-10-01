@@ -47,7 +47,7 @@ import { AppState, Student, QuizQuestion } from '../../types';
 import { Avatar } from '../Avatar';
 import { uid } from '../../utils/helpers';
 import { playCelebration, playBeep } from '../../utils/audio';
-import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, collection, getDocs, query } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { CameraGestureDualZone } from './CameraGestureDualZone';
 
@@ -508,6 +508,9 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
   const targetRoomClassId = urlClassId || state.activeClassId || 'default';
   const roomDocId = `tug_room_${targetRoomClassId}`;
 
+  // Dynamic active room document ID for student machines (locks onto teacher's room when PIN matches)
+  const [activeRoomDocId, setActiveRoomDocId] = useState<string>(() => roomDocId);
+
   // Helper to broadcast room state updates across devices with strict Firestore sanitization
   const broadcastRoomState = (partialState: Record<string, any>) => {
     try {
@@ -520,19 +523,19 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         lastUpdated: new Date().toISOString()
       });
 
+      const targetDocId = activeRoomDocId || roomDocId;
+
       // 1. Save to specific class room document
-      const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
+      const roomRef = doc(db, 'tug_of_war_rooms', targetDocId);
       setDoc(roomRef, payload, { merge: true }).catch((err) =>
         console.warn('Room sync broadcast error:', err)
       );
 
-      // 2. Also save to the primary active room document if updated by teacher
-      if (deviceTeam === 'teacher') {
-        const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
-        setDoc(activeRoomRef, payload, { merge: true }).catch((err) =>
-          console.warn('Active room sync broadcast error:', err)
-        );
-      }
+      // 2. ALWAYS also save to the primary active room document ('tug_room_active') for all updates (Teacher AND Students)
+      const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
+      setDoc(activeRoomRef, payload, { merge: true }).catch((err) =>
+        console.warn('Active room sync broadcast error:', err)
+      );
     } catch (e) {
       console.warn('Room sync broadcast error:', e);
     }
@@ -570,6 +573,51 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
   // Ref to track question start transition for audio & visual cue on student machines
   const prevIsQuestionStartedRef = useRef<boolean>(false);
 
+  // Helper to force fetch and sync active room data directly from Firestore
+  const fetchAndSyncActiveRoom = async () => {
+    try {
+      const targetDocId = activeRoomDocId || roomDocId;
+      let activeDocSnap = await getDoc(doc(db, 'tug_of_war_rooms', targetDocId));
+      if (!activeDocSnap.exists()) {
+        activeDocSnap = await getDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'));
+      }
+      if (activeDocSnap.exists()) {
+        const activeData = activeDocSnap.data();
+        if (activeData) {
+          if (activeData.redPin) setRedPin(String(activeData.redPin));
+          if (activeData.bluePin) setBluePin(String(activeData.bluePin));
+          if (typeof activeData.isQuestionStarted === 'boolean') setIsQuestionStarted(activeData.isQuestionStarted);
+          if (Array.isArray(activeData.matchQuestions) && activeData.matchQuestions.length > 0) {
+            setMatchQuestions(activeData.matchQuestions);
+          }
+          if (typeof activeData.redQuestionIdx === 'number') setRedQuestionIdx(activeData.redQuestionIdx);
+          if (typeof activeData.blueQuestionIdx === 'number') setBlueQuestionIdx(activeData.blueQuestionIdx);
+          if (typeof activeData.redScore === 'number') setRedScore(activeData.redScore);
+          if (typeof activeData.blueScore === 'number') setBlueScore(activeData.blueScore);
+          if (typeof activeData.redAnswerCount === 'number') setRedAnswerCount(activeData.redAnswerCount);
+          if (typeof activeData.blueAnswerCount === 'number') setBlueAnswerCount(activeData.blueAnswerCount);
+          if (typeof activeData.ropePosition === 'number') setRopePosition(activeData.ropePosition);
+          if (activeData.matchWinner !== undefined) setMatchWinner(activeData.matchWinner);
+          if (activeData.currentTurn) setCurrentTurn(activeData.currentTurn);
+          if (activeData.playFormat) setPlayFormat(activeData.playFormat);
+          if (activeData.redSelectedOption !== undefined) setRedSelectedOption(activeData.redSelectedOption);
+          if (activeData.blueSelectedOption !== undefined) setBlueSelectedOption(activeData.blueSelectedOption);
+          if (typeof activeData.speedAttemptedRed === 'boolean') setSpeedAttemptedRed(activeData.speedAttemptedRed);
+          if (typeof activeData.speedAttemptedBlue === 'boolean') setSpeedAttemptedBlue(activeData.speedAttemptedBlue);
+          if (activeData.scoreNotice) setScoreNotice(activeData.scoreNotice);
+          if (typeof activeData.tugTimerSeconds === 'number') setTugTimerSeconds(activeData.tugTimerSeconds);
+          if (typeof activeData.timeLeft === 'number') setTimeLeft(activeData.timeLeft);
+          if (typeof activeData.isTimerRunning === 'boolean') setIsTimerRunning(activeData.isTimerRunning);
+          if (typeof activeData.questionsPerMatch === 'number') setQuestionsPerMatch(activeData.questionsPerMatch);
+          return activeData;
+        }
+      }
+    } catch (e) {
+      console.warn('Fetch and sync active room error:', e);
+    }
+    return null;
+  };
+
   // Subscribe to real-time room state from Cloud Firestore across all devices
   useEffect(() => {
     const applyRoomData = (data: any) => {
@@ -586,8 +634,8 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         prevIsQuestionStartedRef.current = data.isQuestionStarted;
       }
 
-      // Sync match state if updated by another device or if local questions are not loaded yet
-      if (data.updatedBy !== deviceTeam || matchQuestions.length === 0) {
+      // Sync match state unconditionally for student devices or when updated by another device
+      if (deviceTeam !== 'teacher' || data.updatedBy !== deviceTeam || matchQuestions.length === 0) {
         if (typeof data.isQuestionStarted === 'boolean') setIsQuestionStarted(data.isQuestionStarted);
         if (Array.isArray(data.matchQuestions) && data.matchQuestions.length > 0) setMatchQuestions(data.matchQuestions);
         if (typeof data.redQuestionIdx === 'number') setRedQuestionIdx(data.redQuestionIdx);
@@ -615,8 +663,10 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       }
     };
 
+    const currentListenRoomId = activeRoomDocId || roomDocId;
+
     // 1. Primary listener for target room
-    const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
+    const roomRef = doc(db, 'tug_of_war_rooms', currentListenRoomId);
     const unsubscribePrimary = onSnapshot(
       roomRef,
       (snapshot) => {
@@ -647,9 +697,9 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       (err) => console.warn('Firestore room sync warn:', err)
     );
 
-    // 2. Secondary fallback listener for active room (if student device or no URL classId)
+    // 2. Secondary fallback listener for active room
     let unsubscribeActive = () => {};
-    if (deviceTeam !== 'teacher' && roomDocId !== 'tug_room_active') {
+    if (currentListenRoomId !== 'tug_room_active') {
       const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
       unsubscribeActive = onSnapshot(
         activeRoomRef,
@@ -666,7 +716,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       unsubscribePrimary();
       unsubscribeActive();
     };
-  }, [roomDocId, deviceTeam]);
+  }, [activeRoomDocId, roomDocId, deviceTeam]);
 
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [copySuccessMsg, setCopySuccessMsg] = useState<string | null>(null);
@@ -703,7 +753,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     }
   };
 
-  // Verify entered 3-digit PIN to join team (with cloud lookup fallback)
+  // Verify entered 3-digit PIN to join team (with instant multi-room lookup & cloud sync)
   const handleVerifyPin = async (pinToTest?: string) => {
     const targetPin = (pinToTest !== undefined ? pinToTest : inputPin).trim();
     setPinError(null);
@@ -714,72 +764,123 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       return;
     }
 
-    // 1. Direct local check
-    if (targetPin === redPin) {
-      setPinSuccess('🎉 Đúng mã Đội Đỏ! Đang kết nối máy Đội Đỏ 🔴...');
-      if (soundEnabled) playCelebration();
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
-      setTimeout(() => {
-        setDeviceTeam('red');
-        setIsPinModalOpen(false);
-        setInputPin('');
-        setPinSuccess(null);
-      }, 600);
-      return;
-    } else if (targetPin === bluePin) {
-      setPinSuccess('🎉 Đúng mã Đội Xanh! Đang kết nối máy Đội Xanh 🔵...');
-      if (soundEnabled) playCelebration();
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
-      setTimeout(() => {
-        setDeviceTeam('blue');
-        setIsPinModalOpen(false);
-        setInputPin('');
-        setPinSuccess(null);
-      }, 600);
-      return;
-    }
+    let matchedTeam: 'red' | 'blue' | null = null;
+    let matchedRoomId = activeRoomDocId || roomDocId;
+    let matchedData: any = null;
 
-    // 2. Cloud lookup in active room
     try {
-      const activeDocSnap = await getDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'));
-      if (activeDocSnap.exists()) {
-        const activeData = activeDocSnap.data();
-        if (activeData) {
-          if (String(activeData.redPin) === targetPin) {
-            setRedPin(String(activeData.redPin));
-            if (activeData.bluePin) setBluePin(String(activeData.bluePin));
-            setPinSuccess('🎉 Đúng mã Đội Đỏ! Đang kết nối máy Đội Đỏ 🔴...');
-            if (soundEnabled) playCelebration();
-            confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
-            setTimeout(() => {
-              setDeviceTeam('red');
-              setIsPinModalOpen(false);
-              setInputPin('');
-              setPinSuccess(null);
-            }, 600);
-            return;
-          } else if (String(activeData.bluePin) === targetPin) {
-            setBluePin(String(activeData.bluePin));
-            if (activeData.redPin) setRedPin(String(activeData.redPin));
-            setPinSuccess('🎉 Đúng mã Đội Xanh! Đang kết nối máy Đội Xanh 🔵...');
-            if (soundEnabled) playCelebration();
-            confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
-            setTimeout(() => {
-              setDeviceTeam('blue');
-              setIsPinModalOpen(false);
-              setInputPin('');
-              setPinSuccess(null);
-            }, 600);
-            return;
+      // 1. Check current bound room
+      const currentSnap = await getDoc(doc(db, 'tug_of_war_rooms', matchedRoomId));
+      if (currentSnap.exists()) {
+        const data = currentSnap.data();
+        if (data && String(data.redPin) === targetPin) {
+          matchedTeam = 'red';
+          matchedData = data;
+        } else if (data && String(data.bluePin) === targetPin) {
+          matchedTeam = 'blue';
+          matchedData = data;
+        }
+      }
+
+      // 2. Fallback check tug_room_active
+      if (!matchedTeam) {
+        const activeSnap = await getDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'));
+        if (activeSnap.exists()) {
+          const data = activeSnap.data();
+          if (data && String(data.redPin) === targetPin) {
+            matchedTeam = 'red';
+            matchedRoomId = data.activeClassId ? `tug_room_${data.activeClassId}` : 'tug_room_active';
+            matchedData = data;
+          } else if (data && String(data.bluePin) === targetPin) {
+            matchedTeam = 'blue';
+            matchedRoomId = data.activeClassId ? `tug_room_${data.activeClassId}` : 'tug_room_active';
+            matchedData = data;
           }
         }
       }
-    } catch (err) {
-      console.warn('PIN verification cloud check error:', err);
-    }
 
-    setPinError('❌ Mã không chính xác! Vui lòng hỏi Thầy/Cô mã 3 chữ số của đội bạn.');
-    if (soundEnabled) playBeep(200, 0.3, 0.2);
+      // 3. Fallback search all rooms in tug_of_war_rooms collection
+      if (!matchedTeam) {
+        const roomsQuery = query(collection(db, 'tug_of_war_rooms'));
+        const querySnap = await getDocs(roomsQuery);
+        querySnap.forEach((docSnap) => {
+          if (!matchedTeam && docSnap.exists()) {
+            const data = docSnap.data();
+            if (data && String(data.redPin) === targetPin) {
+              matchedTeam = 'red';
+              matchedRoomId = docSnap.id;
+              matchedData = data;
+            } else if (data && String(data.bluePin) === targetPin) {
+              matchedTeam = 'blue';
+              matchedRoomId = docSnap.id;
+              matchedData = data;
+            }
+          }
+        });
+      }
+
+      // 4. Fallback check local state
+      if (!matchedTeam) {
+        if (targetPin === redPin) {
+          matchedTeam = 'red';
+        } else if (targetPin === bluePin) {
+          matchedTeam = 'blue';
+        }
+      }
+
+      if (matchedTeam) {
+        setActiveRoomDocId(matchedRoomId);
+        setDeviceTeam(matchedTeam);
+
+        if (matchedData) {
+          if (matchedData.redPin) setRedPin(String(matchedData.redPin));
+          if (matchedData.bluePin) setBluePin(String(matchedData.bluePin));
+          if (typeof matchedData.isQuestionStarted === 'boolean') setIsQuestionStarted(matchedData.isQuestionStarted);
+          if (Array.isArray(matchedData.matchQuestions) && matchedData.matchQuestions.length > 0) setMatchQuestions(matchedData.matchQuestions);
+          if (typeof matchedData.redQuestionIdx === 'number') setRedQuestionIdx(matchedData.redQuestionIdx);
+          if (typeof matchedData.blueQuestionIdx === 'number') setBlueQuestionIdx(matchedData.blueQuestionIdx);
+          if (typeof matchedData.redScore === 'number') setRedScore(matchedData.redScore);
+          if (typeof matchedData.blueScore === 'number') setBlueScore(matchedData.blueScore);
+          if (typeof matchedData.redAnswerCount === 'number') setRedAnswerCount(matchedData.redAnswerCount);
+          if (typeof matchedData.blueAnswerCount === 'number') setBlueAnswerCount(matchedData.blueAnswerCount);
+          if (typeof matchedData.ropePosition === 'number') setRopePosition(matchedData.ropePosition);
+          if (matchedData.matchWinner !== undefined) setMatchWinner(matchedData.matchWinner);
+          if (matchedData.currentTurn) setCurrentTurn(matchedData.currentTurn);
+          if (matchedData.playFormat) setPlayFormat(matchedData.playFormat);
+        } else {
+          await fetchAndSyncActiveRoom();
+        }
+
+        const teamName = matchedTeam === 'red' ? 'Đội Đỏ 🔴' : 'Đội Xanh 🔵';
+        setPinSuccess(`🎉 Đúng mã ${teamName}! Tín hiệu thi đấu đã kết nối thành công!`);
+        if (soundEnabled) playCelebration();
+        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+
+        setTimeout(() => {
+          setIsPinModalOpen(false);
+          setInputPin('');
+          setPinSuccess(null);
+        }, 500);
+        return;
+      }
+
+      setPinError('❌ Mã không chính xác! Vui lòng hỏi Thầy/Cô mã 3 chữ số của đội bạn.');
+      if (soundEnabled) playBeep(200, 0.3, 0.2);
+    } catch (e) {
+      console.warn('Verify PIN error:', e);
+      if (targetPin === redPin) {
+        setDeviceTeam('red');
+        setIsPinModalOpen(false);
+        setInputPin('');
+        return;
+      } else if (targetPin === bluePin) {
+        setDeviceTeam('blue');
+        setIsPinModalOpen(false);
+        setInputPin('');
+        return;
+      }
+      setPinError('❌ Lỗi kết nối mạng. Vui lòng thử lại!');
+    }
   };
 
   // Option Highlight & Shared Speed Question Tracking
