@@ -13,6 +13,31 @@ interface HandGestureControllerProps {
   arenaRef: React.RefObject<HTMLDivElement | null>;
 }
 
+// Helper DOM highlight functions for instant visual feedback without React re-render overhead
+function highlightDockCard(targetDockId: string | null) {
+  const dockElements = document.querySelectorAll('.dock-card-item');
+  dockElements.forEach((el) => {
+    const dockId = el.getAttribute('data-dock-id');
+    if (targetDockId && dockId === targetDockId) {
+      el.classList.add('ring-4', 'ring-amber-400', 'scale-105', 'shadow-2xl', 'brightness-110');
+    } else {
+      el.classList.remove('ring-4', 'ring-amber-400', 'scale-105', 'shadow-2xl', 'brightness-110');
+    }
+  });
+}
+
+function highlightTargetSlot(targetZoneId: string | null) {
+  const targetElements = document.querySelectorAll('.target-drop-zone');
+  targetElements.forEach((el) => {
+    const targetId = el.getAttribute('data-target-id');
+    if (targetZoneId && targetId === targetZoneId) {
+      el.classList.add('ring-4', 'ring-emerald-400', 'bg-emerald-950/80', 'scale-105');
+    } else {
+      el.classList.remove('ring-4', 'ring-emerald-400', 'bg-emerald-950/80', 'scale-105');
+    }
+  });
+}
+
 export const HandGestureController: React.FC<HandGestureControllerProps> = ({
   isCameraActive,
   onToggleCamera,
@@ -50,6 +75,10 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
   const isHandDetectedRef = useRef<boolean>(false);
   const lostFramesCountRef = useRef<number>(0);
 
+  // Nearest targets for ultra-easy proximity grabbing & dropping
+  const nearestDockItemRef = useRef<DragDropPair | null>(null);
+  const nearestTargetIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     onAttemptMatchRef.current = onAttemptMatch;
   }, [onAttemptMatch]);
@@ -70,6 +99,8 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
     dockItemsRef.current = dockItems;
     if (grabbedItem && !dockItems.some((i) => i.id === grabbedItem.id)) {
       setGrabbedItem(null);
+      highlightDockCard(null);
+      highlightTargetSlot(null);
     }
   }, [dockItems, grabbedItem]);
 
@@ -84,6 +115,8 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
       currentPinchRef.current = false;
       prevPinchingRef.current = false;
       lostFramesCountRef.current = 0;
+      highlightDockCard(null);
+      highlightTargetSlot(null);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -141,7 +174,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
                   const gestureState = computePinchState(landmarks, currentPinchRef.current);
 
-                  // Fast responsive smoothing (80% new position, 20% previous) for instant, jitter-free response
+                  // Responsive Palm-Center smoothing (80% new position, 20% previous) for instant response
                   smoothXRef.current = smoothXRef.current * 0.2 + gestureState.handX * 0.8;
                   smoothYRef.current = smoothYRef.current * 0.2 + gestureState.handY * 0.8;
 
@@ -176,21 +209,11 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
                     const elementsUnderCursor = document.elementsFromPoint(cursorClientX, cursorClientY);
 
-                    // Target drop zone check
-                    let currentTargetId: string | null = null;
-                    for (const el of elementsUnderCursor) {
-                      const targetId = el.getAttribute('data-target-id');
-                      if (targetId) {
-                        currentTargetId = targetId;
-                        break;
-                      }
-                    }
-
-                    // GESTURE TRIGGER 1: Pinch START (Grab image)
-                    if (gestureState.isPinching && !prevPinchingRef.current) {
+                    // A. FIND NEAREST DOCK CARD (When NOT carrying an item)
+                    if (!grabbedItemRef.current) {
                       let foundDockItem: DragDropPair | null = null;
 
-                      // Check direct element overlap
+                      // 1. Direct overlap
                       for (const el of elementsUnderCursor) {
                         const dockId = el.getAttribute('data-dock-id');
                         if (dockId) {
@@ -199,7 +222,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                         }
                       }
 
-                      // Proximity check: find nearest available dock card within 140px
+                      // 2. Ultra-generous proximity radius (within 280px of hand)
                       if (!foundDockItem && dockItemsRef.current.length > 0) {
                         const dockElements = Array.from(document.querySelectorAll('.dock-card-item'));
                         let minDistance = Infinity;
@@ -212,28 +235,76 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                           const centerY = elRect.top + elRect.height / 2;
                           const dist = Math.hypot(cursorClientX - centerX, cursorClientY - centerY);
 
-                          if (dist < 140 && dist < minDistance) {
+                          if (dist < 280 && dist < minDistance) {
                             minDistance = dist;
                             foundDockItem = dockItemsRef.current.find((i) => i.id === dockId) || null;
                           }
                         });
                       }
 
-                      if (foundDockItem) {
-                        setGrabbedItem(foundDockItem);
+                      nearestDockItemRef.current = foundDockItem;
+                      highlightDockCard(foundDockItem ? foundDockItem.id : null);
+                      highlightTargetSlot(null);
+                    } else {
+                      // B. FIND NEAREST TARGET DROP ZONE (When CARRYING an item)
+                      let currentTargetId: string | null = null;
+
+                      // 1. Direct overlap
+                      for (const el of elementsUnderCursor) {
+                        const targetId = el.getAttribute('data-target-id');
+                        if (targetId) {
+                          currentTargetId = targetId;
+                          break;
+                        }
+                      }
+
+                      // 2. Proximity radius (within 250px of hand)
+                      if (!currentTargetId) {
+                        const targetElements = Array.from(document.querySelectorAll('.target-drop-zone'));
+                        let minDistance = Infinity;
+
+                        targetElements.forEach((el) => {
+                          const targetId = el.getAttribute('data-target-id');
+                          if (!targetId) return;
+                          const elRect = el.getBoundingClientRect();
+                          const centerX = elRect.left + elRect.width / 2;
+                          const centerY = elRect.top + elRect.height / 2;
+                          const dist = Math.hypot(cursorClientX - centerX, cursorClientY - centerY);
+
+                          if (dist < 250 && dist < minDistance) {
+                            minDistance = dist;
+                            currentTargetId = targetId;
+                          }
+                        });
+                      }
+
+                      nearestTargetIdRef.current = currentTargetId;
+                      highlightDockCard(null);
+                      highlightTargetSlot(currentTargetId);
+                    }
+
+                    // GESTURE TRIGGER 1: Full Fist / Pinch Close (NẮM CẢ BÀN TAY / ✊)
+                    if (gestureState.isPinching && !prevPinchingRef.current) {
+                      const itemToGrab = nearestDockItemRef.current;
+                      if (itemToGrab) {
+                        setGrabbedItem(itemToGrab);
                         if (soundEnabledRef.current && playTickRef.current) {
                           playTickRef.current();
                         }
                       }
                     }
 
-                    // GESTURE TRIGGER 2: Pinch END (Drop image)
+                    // GESTURE TRIGGER 2: Open Hand Release (XÒE BÀN TAY / 🖐)
                     if (!gestureState.isPinching && prevPinchingRef.current) {
                       const currentGrabbed = grabbedItemRef.current;
-                      if (currentGrabbed && currentTargetId) {
-                        onAttemptMatchRef.current(currentGrabbed, currentTargetId);
+                      const targetToDrop = nearestTargetIdRef.current;
+
+                      if (currentGrabbed && targetToDrop) {
+                        onAttemptMatchRef.current(currentGrabbed, targetToDrop);
                       }
                       setGrabbedItem(null);
+                      highlightDockCard(null);
+                      highlightTargetSlot(null);
                     }
                   }
 
@@ -247,8 +318,11 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                       setIsHandDetected(false);
                       setIsPinching(false);
                       setGrabbedItem(null);
+                      isHandDetectedRef.current = false;
                       currentPinchRef.current = false;
                       prevPinchingRef.current = false;
+                      highlightDockCard(null);
+                      highlightTargetSlot(null);
                     }
                   }
                 }
@@ -275,6 +349,8 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
     return () => {
       isSubscribed = false;
+      highlightDockCard(null);
+      highlightTargetSlot(null);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -300,7 +376,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
               </span>
               <span className="text-xs font-black tracking-wide text-amber-300 uppercase flex items-center gap-1">
                 <Camera className="w-3.5 h-3.5" />
-                Camera Nắm Bàn Tay
+                Camera Nắm Cả Bàn Tay ✊
               </span>
             </div>
 
@@ -328,7 +404,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
           {initStatus === 'loading' && (
             <div className="flex items-center gap-2 text-xs text-amber-300 py-1 font-bold">
               <RefreshCw className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
-              <span>Đang kết nối camera & kích hoạt AI nhận diện bàn tay...</span>
+              <span>Đang kết nối camera & nhận diện bàn tay...</span>
             </div>
           )}
 
@@ -347,16 +423,16 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
               {isHandDetected ? (
                 <div className="flex items-center justify-between text-emerald-300 font-extrabold bg-emerald-950/60 p-2 rounded-xl border border-emerald-500/30">
                   <span className="flex items-center gap-1.5">
-                    {isPinching ? '✊ ĐANG NẮM HÌNH' : '🖐 BÀN TAY ĐÃ SẴN SÀNG'}
+                    {isPinching ? '✊ ĐANG NẮM HÌNH' : '🖐 XÒE TAY SẴN SÀNG'}
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-black">
-                    {isPinching ? 'Chụm ngón' : 'Mở tay'}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${isPinching ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-slate-950'}`}>
+                    {isPinching ? 'Nắm cả bàn tay ✊' : 'Xòe bàn tay 🖐'}
                   </span>
                 </div>
               ) : (
                 <div className="text-amber-300 font-bold bg-amber-950/40 p-2 rounded-xl border border-amber-500/30 flex items-center gap-1.5">
                   <Hand className="w-4 h-4 text-amber-400 animate-bounce shrink-0" />
-                  <span>Giơ bàn tay trước camera để điều khiển!</span>
+                  <span>Giơ bàn tay trước camera (Xòe / Nắm tay)!</span>
                 </div>
               )}
             </div>
@@ -373,7 +449,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
             {showVideoPreview && (
               <div
                 ref={miniDotRef}
-                className="absolute w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-white transform -translate-x-1/2 -translate-y-1/2 shadow-lg pointer-events-none transition-none"
+                className="absolute w-4 h-4 rounded-full bg-amber-400 border-2 border-white transform -translate-x-1/2 -translate-y-1/2 shadow-lg pointer-events-none transition-none"
                 style={{ left: '50%', top: '50%' }}
               />
             )}
@@ -391,44 +467,49 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
           >
             {/* Visual Hand Cursor Icon */}
             <div
-              className={`p-3 rounded-full border-4 shadow-2xl transition-all duration-150 flex items-center justify-center ${
+              className={`p-3.5 rounded-full border-4 shadow-2xl transition-all duration-150 flex items-center justify-center ${
                 isPinching
                   ? 'bg-amber-400 border-amber-300 text-slate-950 scale-125 ring-8 ring-amber-400/50 shadow-amber-500/50'
-                  : 'bg-teal-500/90 border-white text-white scale-100 ring-4 ring-teal-400/40'
+                  : 'bg-teal-500/95 border-white text-white scale-100 ring-4 ring-teal-400/40'
               }`}
             >
               {isPinching ? (
-                <span className="text-2xl animate-pulse">✊</span>
+                <span className="text-3xl animate-pulse select-none">✊</span>
               ) : (
-                <span className="text-2xl">🖐</span>
+                <span className="text-3xl select-none">🖐</span>
               )}
             </div>
 
             {/* Gesture Tooltip Banner */}
-            <div className={`mt-1.5 px-3 py-1 rounded-full text-xs font-black shadow-lg backdrop-blur-md border border-white/20 uppercase tracking-wider transition-all ${
-              isPinching ? 'bg-amber-500 text-slate-950 scale-105' : 'bg-slate-900/90 text-white'
+            <div className={`mt-2 px-3.5 py-1.5 rounded-full text-xs font-black shadow-2xl backdrop-blur-md border border-white/30 uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+              isPinching ? 'bg-amber-500 text-slate-950 scale-105' : 'bg-slate-900/95 text-white'
             }`}>
-              {grabbedItem
-                ? `✊ Đang nắm: ${grabbedItem.caption || grabbedItem.targetLabel}`
-                : isPinching
-                ? '✊ Đang chụm tay'
-                : '🖐 Chụm 2 ngón tay để NẮM hình'}
+              {grabbedItem ? (
+                <>
+                  <span>✊ ĐANG NẮM: {grabbedItem.caption || grabbedItem.targetLabel}</span>
+                  <span className="text-[10px] bg-slate-950 text-amber-300 px-1.5 py-0.5 rounded font-extrabold">Kéo xuống & Xòe tay 🖐</span>
+                </>
+              ) : isPinching ? (
+                <span>✊ Đã nắm cả bàn tay</span>
+              ) : (
+                <span>🖐 NẮM CẢ BÀN TAY ✊ ĐỂ NHẮC HÌNH</span>
+              )}
             </div>
 
             {/* Floating Grabbed Card Preview */}
             {grabbedItem && (
-              <div className="mt-3 p-3 rounded-2xl bg-slate-900/95 border-4 border-amber-400 ring-4 ring-amber-400/40 shadow-2xl flex flex-col items-center justify-center animate-bounce min-w-[120px]">
+              <div className="mt-3 p-3 rounded-2xl bg-slate-900/95 border-4 border-amber-400 ring-4 ring-amber-400/40 shadow-2xl flex flex-col items-center justify-center animate-bounce min-w-[130px]">
                 {grabbedItem.imageType === 'upload' || (grabbedItem.image && (grabbedItem.image.startsWith('data:image') || grabbedItem.image.startsWith('http'))) ? (
                   <img
                     src={grabbedItem.image}
                     alt={grabbedItem.caption || grabbedItem.targetLabel}
-                    className="w-20 h-20 object-contain rounded-xl drop-shadow-md"
+                    className="w-24 h-24 object-contain rounded-xl drop-shadow-md"
                   />
                 ) : (
-                  <span className="text-4xl select-none drop-shadow-md">{grabbedItem.image}</span>
+                  <span className="text-5xl select-none drop-shadow-md">{grabbedItem.image}</span>
                 )}
-                <span className="text-xs font-black text-amber-300 mt-1">
-                  Di chuyển đến ô đáp án & XÒE TAY để thả!
+                <span className="text-xs font-black text-amber-300 mt-1.5 text-center">
+                  Di chuyển đến đáp án & XÒE TAY 🖐 để thả!
                 </span>
               </div>
             )}

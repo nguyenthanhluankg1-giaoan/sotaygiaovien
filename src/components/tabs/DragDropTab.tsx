@@ -1160,7 +1160,7 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                 <span className={`w-2 h-2 rounded-full animate-ping ${isCameraActive ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
                 <span className="font-bold">
                   {isCameraActive
-                    ? '📹 CHẾ ĐỘ CAMERA TAY: Chụm ngón trỏ & ngón cái để NẮM hình, di chuyển đến ô đáp án & XÒE TAY để THẢ!'
+                    ? '📹 CHẾ ĐỘ CAMERA TAY: Nắm cả bàn tay ✊ để nhấc hình (hoặc chụm 2 ngón), di chuyển đến ô đáp án & XÒE TAY 🖐 để thả!'
                     : selectedTouchItem
                     ? hideCaptionsInDock
                       ? `👉 Đang chọn [Hình #${dockItems.findIndex((i) => i.id === selectedTouchItem.id) + 1}]. Hãy bấm vào ô đáp án tương ứng để ghép!`
