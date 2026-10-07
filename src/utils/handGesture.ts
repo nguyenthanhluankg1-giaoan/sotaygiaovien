@@ -62,7 +62,10 @@ export interface HandGestureState {
   pinchDistance: number;
 }
 
-export function computePinchState(landmarks: Array<{ x: number; y: number; z: number }>): HandGestureState {
+export function computePinchState(
+  landmarks: Array<{ x: number; y: number; z: number }>,
+  currentIsPinching: boolean = false
+): HandGestureState {
   if (!landmarks || landmarks.length < 9) {
     return {
       isHandDetected: false,
@@ -77,16 +80,23 @@ export function computePinchState(landmarks: Array<{ x: number; y: number; z: nu
   const indexTip = landmarks[8];
 
   // Mirrored X for natural camera interaction
-  const handX = 1 - indexTip.x;
-  const handY = indexTip.y;
+  const handX = Math.max(0, Math.min(1, 1 - indexTip.x));
+  const handY = Math.max(0, Math.min(1, indexTip.y));
 
   // Calculate 2D distance between thumb tip and index tip
   const dx = thumbTip.x - indexTip.x;
   const dy = thumbTip.y - indexTip.y;
   const pinchDistance = Math.hypot(dx, dy);
 
-  // Threshold for pinch gesture (around 0.08 normalized distance)
-  const isPinching = pinchDistance < 0.085;
+  // Hysteresis thresholding to eliminate gesture flickering:
+  // - If currently NOT pinching, require distance < 0.075 to start pinch
+  // - If currently PINCHING, require distance > 0.120 to release pinch
+  let isPinching = currentIsPinching;
+  if (!currentIsPinching && pinchDistance < 0.075) {
+    isPinching = true;
+  } else if (currentIsPinching && pinchDistance > 0.12) {
+    isPinching = false;
+  }
 
   return {
     isHandDetected: true,
