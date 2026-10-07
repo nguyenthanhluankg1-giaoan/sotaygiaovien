@@ -89,12 +89,12 @@ export function computePinchState(
   const pinchDistance = Math.hypot(dx, dy);
 
   // Hysteresis thresholding to eliminate gesture flickering:
-  // - If currently NOT pinching, require distance < 0.075 to start pinch
-  // - If currently PINCHING, require distance > 0.120 to release pinch
+  // - If currently NOT pinching, require distance < 0.085 to start pinch (easier grab)
+  // - If currently PINCHING, require distance > 0.135 to release pinch (stable hold)
   let isPinching = currentIsPinching;
-  if (!currentIsPinching && pinchDistance < 0.075) {
+  if (!currentIsPinching && pinchDistance < 0.085) {
     isPinching = true;
-  } else if (currentIsPinching && pinchDistance > 0.12) {
+  } else if (currentIsPinching && pinchDistance > 0.135) {
     isPinching = false;
   }
 

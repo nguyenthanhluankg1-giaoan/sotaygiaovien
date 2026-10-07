@@ -24,17 +24,18 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const pointerRef = useRef<HTMLDivElement | null>(null);
+  const miniDotRef = useRef<HTMLDivElement | null>(null);
 
   // Status & Hand Tracking UI State
   const [initStatus, setInitStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isHandDetected, setIsHandDetected] = useState<boolean>(false);
-  const [handPos, setHandPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
   const [isPinching, setIsPinching] = useState<boolean>(false);
   const [grabbedItem, setGrabbedItem] = useState<DragDropPair | null>(null);
   const [showVideoPreview, setShowVideoPreview] = useState<boolean>(true);
 
-  // Refs for stable callback access inside requestAnimationFrame loop without re-triggering camera setup
+  // Refs for stable callback & state access without triggering effect re-runs
   const onAttemptMatchRef = useRef(onAttemptMatch);
   const playTickRef = useRef(playTick);
   const soundEnabledRef = useRef(soundEnabled);
@@ -46,6 +47,8 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
   const smoothYRef = useRef<number>(0.5);
   const currentPinchRef = useRef<boolean>(false);
   const prevPinchingRef = useRef<boolean>(false);
+  const isHandDetectedRef = useRef<boolean>(false);
+  const lostFramesCountRef = useRef<number>(0);
 
   useEffect(() => {
     onAttemptMatchRef.current = onAttemptMatch;
@@ -65,7 +68,6 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
   useEffect(() => {
     dockItemsRef.current = dockItems;
-    // If grabbed item was placed into a target slot, clear grabbed state
     if (grabbedItem && !dockItems.some((i) => i.id === grabbedItem.id)) {
       setGrabbedItem(null);
     }
@@ -76,9 +78,12 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
     if (!isCameraActive) {
       setInitStatus('idle');
       setIsHandDetected(false);
+      setIsPinching(false);
       setGrabbedItem(null);
+      isHandDetectedRef.current = false;
       currentPinchRef.current = false;
       prevPinchingRef.current = false;
+      lostFramesCountRef.current = 0;
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -93,7 +98,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
         setInitStatus('loading');
         setErrorMessage('');
 
-        // 1. Request Camera MediaStream with standard parameters
+        // 1. Request Camera MediaStream
         stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
           audio: false
@@ -128,33 +133,50 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
               try {
                 const results = landmarker.detectForVideo(video, performance.now());
-                if (results && results.landmarks && results.landmarks.length > 0) {
+                const hasLandmarks = results && results.landmarks && results.landmarks.length > 0;
+
+                if (hasLandmarks) {
+                  lostFramesCountRef.current = 0;
                   const landmarks = results.landmarks[0];
-                  // Pass current pinch state to enforce hysteresis and prevent flickering
+
                   const gestureState = computePinchState(landmarks, currentPinchRef.current);
 
-                  // Exponential smoothing (low-pass filter) for jitter-free cursor tracking
-                  smoothXRef.current = smoothXRef.current * 0.55 + gestureState.handX * 0.45;
-                  smoothYRef.current = smoothYRef.current * 0.55 + gestureState.handY * 0.45;
+                  // Fast responsive smoothing (80% new position, 20% previous) for instant, jitter-free response
+                  smoothXRef.current = smoothXRef.current * 0.2 + gestureState.handX * 0.8;
+                  smoothYRef.current = smoothYRef.current * 0.2 + gestureState.handY * 0.8;
 
                   const nextX = Math.round(smoothXRef.current * 1000) / 1000;
                   const nextY = Math.round(smoothYRef.current * 1000) / 1000;
 
-                  setIsHandDetected(true);
-                  setHandPos({ x: nextX, y: nextY });
+                  // Update hand detection state only on state change
+                  if (!isHandDetectedRef.current) {
+                    isHandDetectedRef.current = true;
+                    setIsHandDetected(true);
+                  }
 
                   currentPinchRef.current = gestureState.isPinching;
-                  setIsPinching(gestureState.isPinching);
+                  if (prevPinchingRef.current !== gestureState.isPinching) {
+                    setIsPinching(gestureState.isPinching);
+                  }
 
-                  // Calculate screen coordinates for hit testing against game cards/slots
+                  // Update hardware-accelerated pointer positions directly via DOM (0 React re-renders)
                   if (arenaRef.current) {
                     const rect = arenaRef.current.getBoundingClientRect();
                     const cursorClientX = rect.left + nextX * rect.width;
                     const cursorClientY = rect.top + nextY * rect.height;
 
+                    if (pointerRef.current) {
+                      pointerRef.current.style.transform = `translate3d(${cursorClientX}px, ${cursorClientY}px, 0px)`;
+                    }
+
+                    if (miniDotRef.current) {
+                      miniDotRef.current.style.left = `${nextX * 100}%`;
+                      miniDotRef.current.style.top = `${nextY * 100}%`;
+                    }
+
                     const elementsUnderCursor = document.elementsFromPoint(cursorClientX, cursorClientY);
 
-                    // Find if cursor is currently over a target drop zone
+                    // Target drop zone check
                     let currentTargetId: string | null = null;
                     for (const el of elementsUnderCursor) {
                       const targetId = el.getAttribute('data-target-id');
@@ -164,7 +186,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                       }
                     }
 
-                    // GESTURE TRIGGER 1: Pinch START (User closes fingers to GRAB image)
+                    // GESTURE TRIGGER 1: Pinch START (Grab image)
                     if (gestureState.isPinching && !prevPinchingRef.current) {
                       let foundDockItem: DragDropPair | null = null;
 
@@ -177,7 +199,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                         }
                       }
 
-                      // Proximity check: find nearest available dock card within 120px
+                      // Proximity check: find nearest available dock card within 140px
                       if (!foundDockItem && dockItemsRef.current.length > 0) {
                         const dockElements = Array.from(document.querySelectorAll('.dock-card-item'));
                         let minDistance = Infinity;
@@ -190,7 +212,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                           const centerY = elRect.top + elRect.height / 2;
                           const dist = Math.hypot(cursorClientX - centerX, cursorClientY - centerY);
 
-                          if (dist < 120 && dist < minDistance) {
+                          if (dist < 140 && dist < minDistance) {
                             minDistance = dist;
                             foundDockItem = dockItemsRef.current.find((i) => i.id === dockId) || null;
                           }
@@ -205,7 +227,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                       }
                     }
 
-                    // GESTURE TRIGGER 2: Pinch END (User opens fingers to DROP image)
+                    // GESTURE TRIGGER 2: Pinch END (Drop image)
                     if (!gestureState.isPinching && prevPinchingRef.current) {
                       const currentGrabbed = grabbedItemRef.current;
                       if (currentGrabbed && currentTargetId) {
@@ -217,10 +239,18 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
                   prevPinchingRef.current = gestureState.isPinching;
                 } else {
-                  setIsHandDetected(false);
-                  setIsPinching(false);
-                  currentPinchRef.current = false;
-                  prevPinchingRef.current = false;
+                  // Buffer missing landmarks for 12 frames (~200ms) to prevent dropping grab during minor camera flickers
+                  lostFramesCountRef.current += 1;
+                  if (lostFramesCountRef.current > 12) {
+                    if (isHandDetectedRef.current) {
+                      isHandDetectedRef.current = false;
+                      setIsHandDetected(false);
+                      setIsPinching(false);
+                      setGrabbedItem(null);
+                      currentPinchRef.current = false;
+                      prevPinchingRef.current = false;
+                    }
+                  }
                 }
               } catch (err) {
                 console.warn('Frame detection warning:', err);
@@ -340,28 +370,24 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
               muted
               className="w-full h-full object-cover transform -scale-x-100"
             />
-            {isHandDetected && showVideoPreview && (
+            {showVideoPreview && (
               <div
-                className="absolute w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-white transform -translate-x-1/2 -translate-y-1/2 shadow-lg pointer-events-none transition-all duration-75"
-                style={{
-                  left: `${handPos.x * 100}%`,
-                  top: `${handPos.y * 100}%`
-                }}
+                ref={miniDotRef}
+                className="absolute w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-white transform -translate-x-1/2 -translate-y-1/2 shadow-lg pointer-events-none transition-none"
+                style={{ left: '50%', top: '50%' }}
               />
             )}
           </div>
         </div>
       </div>
 
-      {/* 2. Virtual Hand Cursor Pointer & Floating Image Overlay */}
-      {initStatus === 'ready' && isHandDetected && arenaRef.current && (
+      {/* 2. Virtual Hand Cursor Pointer & Floating Image Overlay (Direct Hardware Accelerated DOM Transform) */}
+      {initStatus === 'ready' && isHandDetected && (
         <div className="pointer-events-none fixed inset-0 z-[1100]">
           <div
-            className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center transition-all duration-75 ease-out"
-            style={{
-              left: `${arenaRef.current.getBoundingClientRect().left + handPos.x * arenaRef.current.getBoundingClientRect().width}px`,
-              top: `${arenaRef.current.getBoundingClientRect().top + handPos.y * arenaRef.current.getBoundingClientRect().height}px`
-            }}
+            ref={pointerRef}
+            className="absolute left-0 top-0 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center transition-none"
+            style={{ transform: 'translate3d(0px, 0px, 0px)' }}
           >
             {/* Visual Hand Cursor Icon */}
             <div
