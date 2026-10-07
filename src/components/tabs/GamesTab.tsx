@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Swords, Gamepad2, Play, Trophy, Users, Zap, HelpCircle, FileCheck } from 'lucide-react';
+import { Sparkles, Swords, Gamepad2, Play, Trophy, Users, Zap, HelpCircle, FileCheck, Move } from 'lucide-react';
 import { AppState } from '../../types';
 
 interface GamesTabProps {
@@ -37,6 +37,20 @@ export const GamesTab: React.FC<GamesTabProps> = ({ state, onNavigate }) => {
       iconBg: 'bg-teal-100 text-teal-600',
       description: 'Minigame thi đấu kéo co kiến thức giữa 2 đội hoặc các nhóm học sinh trả lời câu hỏi trắc nghiệm.',
       features: ['Thi đấu 2 đội', 'Ngân hàng câu hỏi', 'Tăng tốc hấp dẫn', 'Bảng vinh danh']
+    },
+    {
+      id: 'dragdrop',
+      title: 'Kéo Thả Nối Hình - Đáp Án',
+      category: 'Trò chơi tương tác',
+      badge: 'MỚI',
+      badgeColor: 'bg-orange-500 text-white',
+      gradient: 'from-orange-500 via-amber-500 to-rose-500',
+      bgGlow: 'from-orange-100/50 to-amber-100/30',
+      borderColor: 'border-orange-200 hover:border-orange-400',
+      icon: Move,
+      iconBg: 'bg-orange-100 text-orange-600',
+      description: 'Trò chơi kéo thả hình ảnh vào ô đáp án đúng, nối từ ngữ - khái niệm tương ứng, hỗ trợ giáo viên tự tạo trò chơi.',
+      features: ['Kéo thả trực quan', 'Tự tạo bộ câu hỏi', 'Âm thanh & Pháo hoa', 'Đa môn học & Khối lớp']
     },
     {
       id: 'worksheets',

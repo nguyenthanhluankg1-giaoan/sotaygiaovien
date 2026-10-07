@@ -24,7 +24,9 @@ import {
   FolderOpen,
   FileText,
   Calendar,
-  PhoneCall
+  PhoneCall,
+  Move,
+  Cloud
 } from 'lucide-react';
 import { UserAccount } from '../types';
 import { Avatar } from './Avatar';
@@ -68,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   useEffect(() => {
     if (currentPage === 'khdh') {
       setActiveFolderState('khdh');
-    } else if (['games', 'wheel', 'film', 'worksheets'].includes(currentPage)) {
+    } else if (['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(currentPage)) {
       setActiveFolderState('games');
     } else if (activeFolderState === 'khdh' || activeFolderState === 'games') {
       setActiveFolderState('classroom');
@@ -80,6 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const gameItems = [
     { id: 'wheel', label: 'Vòng quay may mắn', icon: Sparkles, badge: 'HOT' },
     { id: 'film', label: 'Trò chơi Kéo co', icon: Swords, badge: 'HOT' },
+    { id: 'dragdrop', label: 'Kéo thả nối hình', icon: Move, badge: 'MỚI' },
     { id: 'worksheets', label: 'Ngân hàng câu hỏi', icon: FileCheck, badge: 'TẠO CH' }
   ];
 
@@ -313,15 +316,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
                 <span className="text-[13px] tracking-tight truncate font-extrabold uppercase">TRÒ CHƠI</span>
               </div>
-              <span
-                className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                  activeFolder === 'games'
-                    ? 'bg-white/25 text-white'
-                    : 'bg-teal-100 text-teal-800'
-                }`}
-              >
-                {gameItems.length}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span
+                  className={`text-[9px] font-black px-1.5 py-0.2 rounded-full flex items-center gap-0.5 ${
+                    activeFolder === 'games'
+                      ? 'bg-emerald-400/30 text-emerald-100 border border-emerald-300/40'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  }`}
+                  title="Tất cả trò chơi được tự động lưu trữ trên Cloud Firebase"
+                >
+                  <Cloud className="w-2.5 h-2.5 text-emerald-500" />
+                  <span>Cloud</span>
+                </span>
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                    activeFolder === 'games'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-teal-100 text-teal-800'
+                  }`}
+                >
+                  {gameItems.length}
+                </span>
+              </div>
             </button>
           </div>
 
@@ -352,6 +368,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           ) : (
             <div className="space-y-1.5 animate-in fade-in duration-150 p-1">
+              {/* Cloud Firebase Auto-save Banner */}
+              <div className="p-2.5 rounded-2xl bg-gradient-to-r from-teal-50 via-emerald-50 to-teal-50 border border-teal-200/90 text-teal-950 flex items-center justify-between gap-2 shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <Cloud className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0 leading-tight">
+                    <span className="text-[11px] font-black text-teal-900 block truncate">
+                      Tự động lưu trữ trên Firebase
+                    </span>
+                    <span className="text-[10px] text-teal-700 font-medium block truncate">
+                      Đồng bộ đám mây tức thì mọi thiết bị
+                    </span>
+                  </div>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Đang kết nối Firebase Firestore" />
+              </div>
+
               <div className="px-2 py-1 flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase text-teal-800 tracking-wider">
                   DANH SÁCH TRÒ CHƠI

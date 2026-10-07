@@ -45,6 +45,15 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Games data and drag-drop games collection
+    match /games_data/{docId} {
+      allow read, write: if true;
+    }
+
+    match /dragdrop_games/{gameId} {
+      allow read, write: if true;
+    }
+
     // Test connection collection
     match /test/{docId} {
       allow read, write: if true;

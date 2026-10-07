@@ -7,7 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Gift,
-  Trophy
+  Trophy,
+  Move
 } from 'lucide-react';
 
 interface GamesNavBarProps {
@@ -32,6 +33,7 @@ export const GamesNavBar: React.FC<GamesNavBarProps> = ({
     { id: 'games', label: 'Tất cả trò chơi', icon: Gamepad2, badge: '' },
     { id: 'wheel', label: 'Vòng quay may mắn', icon: Sparkles, badge: 'HOT' },
     { id: 'film', label: 'Trò chơi Kéo co', icon: Swords, badge: 'HOT' },
+    { id: 'dragdrop', label: 'Trò chơi Kéo thả', icon: Move, badge: 'MỚI' },
     { id: 'worksheets', label: 'Ngân hàng câu hỏi', icon: FileCheck, badge: 'TẠO CH' }
   ];
 

@@ -72,62 +72,181 @@ interface FilmTabProps {
   onUpdateState: (updater: (prev: AppState) => AppState) => void;
 }
 
-const DEFAULT_TUG_QUESTIONS: QuizQuestion[] = [
-  {
-    id: 'tug-q1',
-    question: 'Số lớn nhất có hai chữ số là số nào?',
-    options: ['89', '90', '99', '100'],
-    correctIndex: 2,
-    subject: 'Toán',
-    grade: 'all',
-    explanation: 'Số 99 là số lớn nhất có hai chữ số.'
-  },
-  {
-    id: 'tug-q2',
-    question: 'Từ nào sau đây là từ chỉ hoạt động?',
-    options: ['Bông hoa', 'Chạy bộ', 'Ngôi nhà', 'Cái bàn'],
-    correctIndex: 1,
-    subject: 'Tiếng Việt',
-    grade: 'all',
-    explanation: '"Chạy bộ" là từ chỉ hoạt động của con người.'
-  },
-  {
-    id: 'tug-q3',
-    question: 'Mặt Trời mọc ở hướng nào?',
-    options: ['Hướng Tây', 'Hướng Đông', 'Hướng Nam', 'Hướng Bắc'],
-    correctIndex: 1,
-    subject: 'Tự nhiên và Xã hội',
-    grade: 'all',
-    explanation: 'Mặt Trời mọc ở hướng Đông và lặn ở hướng Tây.'
-  },
-  {
-    id: 'tug-q4',
-    question: 'Phép tính nào sau đây có kết quả bằng 15?',
-    options: ['7 + 8', '6 + 8', '9 + 5', '8 + 8'],
-    correctIndex: 0,
-    subject: 'Toán',
-    grade: 'all',
-    explanation: '7 + 8 = 15.'
-  },
-  {
-    id: 'tug-q5',
-    question: 'Thủ đô của Việt Nam tên là gì?',
-    options: ['Đà Nẵng', 'Thành phố Hồ Chí Minh', 'Hà Nội', 'Hải Phòng'],
-    correctIndex: 2,
-    subject: 'Lịch sử và Địa lí',
-    grade: 'all',
-    explanation: 'Hà Nội là thủ đô của nước Cộng hòa Xã hội Chủ nghĩa Việt Nam.'
-  },
-  {
-    id: 'tug-q6',
-    question: 'Đâu là thiết bị xuất dữ liệu chính của máy tính?',
-    options: ['Bàn phím', 'Con chuột', 'Màn hình', 'Micro'],
-    correctIndex: 2,
-    subject: 'Tin học',
-    grade: 'all',
-    explanation: 'Màn hình là thiết bị xuất hình ảnh và thông tin.'
+// Grade and Subject Specific Question Generator for strict subject isolation
+export function getQuestionsForGradeAndSubject(grade: string, subject: string): QuizQuestion[] {
+  const cleanGrade = grade === 'all' ? 'Tất cả khối' : `Khối ${grade.replace(/\D/g, '') || grade}`;
+  const cleanSubject = subject === 'all' ? 'Tất cả môn' : subject;
+
+  const database: Record<string, Record<string, QuizQuestion[]>> = {
+    'Toán': {
+      '1': [
+        { id: 'math-1-1', question: 'Số liền sau của số 9 là số nào?', options: ['8', '10', '11', '12'], correctIndex: 1, subject: 'Toán', grade: '1', explanation: '9 + 1 = 10.' },
+        { id: 'math-1-2', question: 'Kết quả của phép tính 5 + 4 là bao nhiêu?', options: ['8', '9', '10', '7'], correctIndex: 1, subject: 'Toán', grade: '1', explanation: '5 + 4 = 9.' },
+        { id: 'math-1-3', question: 'Số nào nhỏ nhất trong các số: 7, 3, 9, 5?', options: ['7', '3', '9', '5'], correctIndex: 1, subject: 'Toán', grade: '1', explanation: 'Số 3 là số nhỏ nhất.' },
+        { id: 'math-1-4', question: 'Hình nào có 3 cạnh và 3 đỉnh?', options: ['Hình vuông', 'Hình tròn', 'Hình tam giác', 'Hình chữ nhật'], correctIndex: 2, subject: 'Toán', grade: '1', explanation: 'Hình tam giác có 3 cạnh.' },
+        { id: 'math-1-5', question: 'Kết quả của 10 - 6 là bao nhiêu?', options: ['3', '4', '5', '6'], correctIndex: 1, subject: 'Toán', grade: '1', explanation: '10 - 6 = 4.' }
+      ],
+      '2': [
+        { id: 'math-2-1', question: 'Tích của 2 x 5 là bao nhiêu?', options: ['7', '10', '12', '15'], correctIndex: 1, subject: 'Toán', grade: '2', explanation: '2 x 5 = 10.' },
+        { id: 'math-2-2', question: 'Một ngày đêm có bao nhiêu giờ?', options: ['12 giờ', '24 giờ', '36 giờ', '48 giờ'], correctIndex: 1, subject: 'Toán', grade: '2', explanation: '1 ngày đêm = 24 giờ.' },
+        { id: 'math-2-3', question: 'Kết quả của 48 + 25 là bao nhiêu?', options: ['63', '73', '72', '83'], correctIndex: 1, subject: 'Toán', grade: '2', explanation: '48 + 25 = 73.' },
+        { id: 'math-2-4', question: 'Thương của 15 : 5 là bao nhiêu?', options: ['2', '3', '4', '5'], correctIndex: 1, subject: 'Toán', grade: '2', explanation: '15 : 5 = 3.' },
+        { id: 'math-2-5', question: 'Số tròn chục liền sau số 50 là số nào?', options: ['40', '60', '70', '80'], correctIndex: 1, subject: 'Toán', grade: '2', explanation: 'Số tròn chục sau 50 là 60.' }
+      ],
+      '3': [
+        { id: 'math-3-1', question: 'Tích của 7 x 8 bằng bao nhiêu?', options: ['54', '56', '64', '48'], correctIndex: 1, subject: 'Toán', grade: '3', explanation: '7 x 8 = 56.' },
+        { id: 'math-3-2', question: 'Chu vi hình vuông có cạnh 5 cm là bao nhiêu?', options: ['10 cm', '20 cm', '25 cm', '15 cm'], correctIndex: 1, subject: 'Toán', grade: '3', explanation: '5 x 4 = 20 cm.' },
+        { id: 'math-3-3', question: 'Số lớn nhất có ba chữ số là số nào?', options: ['900', '990', '999', '1000'], correctIndex: 2, subject: 'Toán', grade: '3', explanation: '999 là số lớn nhất có 3 chữ số.' },
+        { id: 'math-3-4', question: 'Một năm không nhuận có bao nhiêu ngày?', options: ['364 ngày', '365 ngày', '366 ngày', '360 ngày'], correctIndex: 1, subject: 'Toán', grade: '3', explanation: 'Năm thường có 365 ngày.' },
+        { id: 'math-3-5', question: 'Giá trị của x trong phép tính x : 6 = 9 là bao nhiêu?', options: ['45', '54', '63', '36'], correctIndex: 1, subject: 'Toán', grade: '3', explanation: 'x = 9 x 6 = 54.' }
+      ],
+      '4': [
+        { id: 'math-4-1', question: 'Trung bình cộng của các số 10, 20, 30 là bao nhiêu?', options: ['15', '20', '25', '30'], correctIndex: 1, subject: 'Toán', grade: '4', explanation: '(10 + 20 + 30) : 3 = 20.' },
+        { id: 'math-4-2', question: 'Số nào sau đây chia hết cho cả 2 và 5?', options: ['12', '25', '30', '35'], correctIndex: 2, subject: 'Toán', grade: '4', explanation: 'Tận cùng là 0 chia hết cho cả 2 và 5.' },
+        { id: 'math-4-3', question: 'Diện tích hình bình hành có độ dài đáy 8 cm và chiều cao 5 cm là bao nhiêu?', options: ['20 cm²', '40 cm²', '13 cm²', '30 cm²'], correctIndex: 1, subject: 'Toán', grade: '4', explanation: '8 x 5 = 40 cm².' },
+        { id: 'math-4-4', question: 'Phân số 3/4 bằng phân số nào sau đây?', options: ['6/8', '9/10', '5/6', '4/3'], correctIndex: 0, subject: 'Toán', grade: '4', explanation: '3/4 = 6/8.' },
+        { id: 'math-4-5', question: 'Một thế kỷ bằng bao nhiêu năm?', options: ['10 năm', '50 năm', '100 năm', '1000 năm'], correctIndex: 2, subject: 'Toán', grade: '4', explanation: '1 thế kỷ = 100 năm.' }
+      ],
+      '5': [
+        { id: 'math-5-1', question: 'Diện tích hình tam giác có độ dài đáy 10 cm và chiều cao 6 cm là bao nhiêu?', options: ['60 cm²', '30 cm²', '16 cm²', '20 cm²'], correctIndex: 1, subject: 'Toán', grade: '5', explanation: '(10 x 6) : 2 = 30 cm².' },
+        { id: 'math-5-2', question: 'Một ô tô đi với vận tốc 50 km/h trong 2.5 giờ. Quãng đường đi được là bao nhiêu?', options: ['100 km', '125 km', '150 km', '110 km'], correctIndex: 1, subject: 'Toán', grade: '5', explanation: '50 x 2.5 = 125 km.' },
+        { id: 'math-5-3', question: 'Viết phân số 3/5 dưới dạng số thập phân ta được:', options: ['0.3', '0.5', '0.6', '0.35'], correctIndex: 2, subject: 'Toán', grade: '5', explanation: '3 : 5 = 0.6.' },
+        { id: 'math-5-4', question: '25% của số 120 là bao nhiêu?', options: ['20', '25', '30', '40'], correctIndex: 2, subject: 'Toán', grade: '5', explanation: '120 x 25% = 30.' },
+        { id: 'math-5-5', question: 'Thể tích hình lập phương có cạnh 3 cm là bao nhiêu?', options: ['9 cm³', '18 cm³', '27 cm³', '36 cm³'], correctIndex: 2, subject: 'Toán', grade: '5', explanation: '3 x 3 x 3 = 27 cm³.' }
+      ]
+    },
+    'Tiếng Việt': {
+      '1': [
+        { id: 'tv-1-1', question: 'Từ nào sau đây viết đúng chính tả?', options: ['Con ghà', 'Con gà', 'Con gàh', 'Cơn gà'], correctIndex: 1, subject: 'Tiếng Việt', grade: '1', explanation: '"Con gà" đúng chính tả.' },
+        { id: 'tv-1-2', question: 'Từ nào chỉ người thân trong gia đình?', options: ['Bàn ghế', 'Ông bà', 'Ngôi nhà', 'Quyển sách'], correctIndex: 1, subject: 'Tiếng Việt', grade: '1', explanation: '"Ông bà" là người thân.' },
+        { id: 'tv-1-3', question: 'Tiếng nào có chứa vần "anh"?', options: ['Bánh', 'Bóng', 'Bông', 'Bút'], correctIndex: 0, subject: 'Tiếng Việt', grade: '1', explanation: 'Tiếng "Bánh" có vần anh.' }
+      ],
+      '2': [
+        { id: 'tv-2-1', question: 'Từ nào sau đây là từ chỉ hoạt động?', options: ['Bông hoa', 'Chạy bộ', 'Cái bàn', 'Ngôi nhà'], correctIndex: 1, subject: 'Tiếng Việt', grade: '2', explanation: '"Chạy bộ" là từ chỉ hoạt động.' },
+        { id: 'tv-2-2', question: 'Từ nào trái nghĩa với từ "chăm chỉ"?', options: ['Ngoan ngoãn', 'Lười biếng', 'Hiền lành', 'Cần cù'], correctIndex: 1, subject: 'Tiếng Việt', grade: '2', explanation: 'Trái nghĩa với chăm chỉ là lười biếng.' },
+        { id: 'tv-2-3', question: 'Dấu câu nào dùng để kết thúc câu kể?', options: ['Dấu hỏi', 'Dấu chấm', 'Dấu bộc lộ', 'Dấu phẩy'], correctIndex: 1, subject: 'Tiếng Việt', grade: '2', explanation: 'Dấu chấm kết thúc câu kể.' }
+      ],
+      '3': [
+        { id: 'tv-3-1', question: 'Trong câu "Mặt trời như một quả bóng lửa", tác giả sử dụng biện pháp nghệ thuật nào?', options: ['Nhân hóa', 'So sánh', 'Ẩn dụ', 'Điệp ngữ'], correctIndex: 1, subject: 'Tiếng Việt', grade: '3', explanation: 'So sánh Mặt trời với quả bóng lửa.' },
+        { id: 'tv-3-2', question: 'Từ nào sau đây là từ chỉ đặc điểm?', options: ['Học sinh', 'Viết bài', 'Xinh đẹp', 'Trường học'], correctIndex: 2, subject: 'Tiếng Việt', grade: '3', explanation: '"Xinh đẹp" là từ chỉ đặc điểm.' },
+        { id: 'tv-3-3', question: 'Câu nào sau đây bộc lộ cảm xúc?', options: ['Hôm nay trời mưa.', 'Bạn đi đâu đấy?', 'Ôi, bông hoa đẹp quá!', 'Em đang học bài.'], correctIndex: 2, subject: 'Tiếng Việt', grade: '3', explanation: 'Câu cảm thán bộc lộ cảm xúc.' }
+      ],
+      '4': [
+        { id: 'tv-4-1', question: 'Từ nào sau đây là danh từ?', options: ['Chạy', 'Đẹp', 'Học sinh', 'Nhanh'], correctIndex: 2, subject: 'Tiếng Việt', grade: '4', explanation: '"Học sinh" là danh từ.' },
+        { id: 'tv-4-2', question: 'Chủ ngữ trong câu "Những chú chim hót ríu rít trên cành cây" là gì?', options: ['Những chú chim', 'Hót ríu rít', 'Trên cành cây', 'Ríu rít'], correctIndex: 0, subject: 'Tiếng Việt', grade: '4', explanation: '"Những chú chim" là chủ ngữ.' },
+        { id: 'tv-4-3', question: 'Từ nào đồng nghĩa với từ "bao la"?', options: ['Nhỏ bé', 'Rộng lớn', 'Chật hẹp', 'Cao vút'], correctIndex: 1, subject: 'Tiếng Việt', grade: '4', explanation: '"Bao la" đồng nghĩa với "Rộng lớn".' }
+      ],
+      '5': [
+        { id: 'tv-5-1', question: 'Câu ghép là câu có đặc điểm nào sau đây?', options: ['Chỉ có một vế câu', 'Do hai hay nhiều vế câu tạo thành', 'Không có chủ ngữ', 'Không có vị ngữ'], correctIndex: 1, subject: 'Tiếng Việt', grade: '5', explanation: 'Câu ghép do nhiều vế câu ghép lại.' },
+        { id: 'tv-5-2', question: 'Cặp quan hệ từ nào thể hiện mối quan hệ Nguyên nhân - Kết quả?', options: ['Nếu... thì...', 'Tuy... nhưng...', 'Vì... nên...', 'Chẳng những... mà còn...'], correctIndex: 2, subject: 'Tiếng Việt', grade: '5', explanation: 'Vì... nên...' },
+        { id: 'tv-5-3', question: 'Từ nào là đại từ xưng hô trong câu "Chúng em rất yêu quý cô giáo"?', options: ['Yêu quý', 'Chúng em', 'Cô giáo', 'Rất'], correctIndex: 1, subject: 'Tiếng Việt', grade: '5', explanation: '"Chúng em" là đại từ xưng hô.' }
+      ]
+    },
+    'Tin học': {
+      '3': [
+        { id: 'cs-3-1', question: 'Đâu là thiết bị xuất thông tin hình ảnh của máy tính?', options: ['Bàn phím', 'Con chuột', 'Màn hình', 'Micro'], correctIndex: 2, subject: 'Tin học', grade: '3', explanation: 'Màn hình xuất hình ảnh.' },
+        { id: 'cs-3-2', question: 'Để gõ chữ hoa trên bàn phím máy tính, em nhấn giữ phím nào?', options: ['Ctrl', 'Shift', 'Alt', 'Tab'], correctIndex: 1, subject: 'Tin học', grade: '3', explanation: 'Phím Shift gõ chữ hoa.' },
+        { id: 'cs-3-3', question: 'Thao tác nhấp đôi chuột trái có tác dụng gì?', options: ['Tắt máy tính', 'Mở tệp hoặc thư mục', 'Xóa tệp', 'Sao chép văn bản'], correctIndex: 1, subject: 'Tin học', grade: '3', explanation: 'Nhấp đôi dùng để mở.' }
+      ],
+      '4': [
+        { id: 'cs-4-1', question: 'Để chèn hình ảnh vào văn bản trong phần mềm soạn thảo, em chọn thẻ nào?', options: ['Home', 'Insert', 'View', 'Layout'], correctIndex: 1, subject: 'Tin học', grade: '4', explanation: 'Thẻ Insert chèn ảnh.' },
+        { id: 'cs-4-2', question: 'Phím tắt nào dùng để sao chép (Copy) đoạn văn bản đã chọn?', options: ['Ctrl + C', 'Ctrl + V', 'Ctrl + X', 'Ctrl + Z'], correctIndex: 0, subject: 'Tin học', grade: '4', explanation: 'Ctrl + C sao chép.' },
+        { id: 'cs-4-3', question: 'Trong phần mềm trình chiếu, để bắt đầu trình chiếu từ slide đầu tiên em nhấn phím nào?', options: ['F1', 'F5', 'Esc', 'Enter'], correctIndex: 1, subject: 'Tin học', grade: '4', explanation: 'Phím F5 trình chiếu.' }
+      ],
+      '5': [
+        { id: 'cs-5-1', question: 'Trong phần mềm Scratch, khối lệnh nào dùng để lặp lại một chuỗi hành động?', options: ['Khối lặp (Repeat / Forever)', 'Khối gán biến', 'Khối tính toán', 'Khối hội thoại'], correctIndex: 0, subject: 'Tin học', grade: '5', explanation: 'Khối Repeat/Forever.' },
+        { id: 'cs-5-2', question: 'Địa chỉ thư điện tử (Email) hợp lệ bắt đầu có chứa ký tự đặc biệt nào?', options: ['#', '@', '$', '&'], correctIndex: 1, subject: 'Tin học', grade: '5', explanation: 'Địa chỉ email chứa @.' },
+        { id: 'cs-5-3', question: 'Hành động nào giúp bảo vệ an toàn thông tin khi truy cập Internet?', options: ['Chia sẻ mật khẩu', 'Không nhấp vào đường liên kết lạ', 'Gửi thông tin cá nhân', 'Tải tệp không rõ nguồn gốc'], correctIndex: 1, subject: 'Tin học', grade: '5', explanation: 'Không click link lạ.' }
+      ]
+    },
+    'Tiếng Anh': {
+      '3': [
+        { id: 'en-3-1', question: 'What color is the sky on a clear day?', options: ['Red', 'Blue', 'Green', 'Yellow'], correctIndex: 1, subject: 'Tiếng Anh', grade: '3', explanation: 'Blue.' },
+        { id: 'en-3-2', question: 'How do you say "Xin chào" in English?', options: ['Goodbye', 'Hello', 'Thank you', 'Sorry'], correctIndex: 1, subject: 'Tiếng Anh', grade: '3', explanation: 'Hello.' },
+        { id: 'en-3-3', question: 'Which animal gives us milk?', options: ['Cat', 'Dog', 'Cow', 'Fish'], correctIndex: 2, subject: 'Tiếng Anh', grade: '3', explanation: 'Cow.' }
+      ],
+      '4': [
+        { id: 'en-4-1', question: 'What day comes after Monday?', options: ['Sunday', 'Tuesday', 'Wednesday', 'Thursday'], correctIndex: 1, subject: 'Tiếng Anh', grade: '4', explanation: 'Tuesday.' },
+        { id: 'en-4-2', question: 'What time is it when short hand is at 3 and long hand is at 12?', options: ['Three o\'clock', 'Twelve o\'clock', 'Six o\'clock', 'Nine o\'clock'], correctIndex: 0, subject: 'Tiếng Anh', grade: '4', explanation: 'Three o\'clock.' },
+        { id: 'en-4-3', question: 'Choose the correct word: "She ______ to school every day."', options: ['go', 'goes', 'going', 'went'], correctIndex: 1, subject: 'Tiếng Anh', grade: '4', explanation: 'She goes.' }
+      ],
+      '5': [
+        { id: 'en-5-1', question: 'Where is the capital of England?', options: ['Paris', 'London', 'Tokyo', 'Washington D.C.'], correctIndex: 1, subject: 'Tiếng Anh', grade: '5', explanation: 'London.' },
+        { id: 'en-5-2', question: 'Yesterday, I ______ to the zoo with my family.', options: ['go', 'goes', 'went', 'going'], correctIndex: 2, subject: 'Tiếng Anh', grade: '5', explanation: 'Went.' },
+        { id: 'en-5-3', question: 'Which word is the opposite of "hot"?', options: ['Warm', 'Cold', 'Dry', 'Big'], correctIndex: 1, subject: 'Tiếng Anh', grade: '5', explanation: 'Cold.' }
+      ]
+    },
+    'Tự nhiên và Xã hội': {
+      '1': [
+        { id: 'tnxh-1-1', question: 'Bộ phận nào trên cơ thể dùng để nghe âm thanh?', options: ['Mắt', 'Mũi', 'Tai', 'Miệng'], correctIndex: 2, subject: 'Tự nhiên và Xã hội', grade: '1', explanation: 'Tai nghe âm thanh.' }
+      ],
+      '2': [
+        { id: 'tnxh-2-1', question: 'Cơ quan hô hấp của con người bao gồm bộ phận nào?', options: ['Mũi, khí quản, phế quản và phổi', 'Dạ dày, ruột', 'Tim và mạch máu', 'Mắt và tai'], correctIndex: 0, subject: 'Tự nhiên và Xã hội', grade: '2', explanation: 'Mũi, khí quản, phế quản và phổi.' }
+      ],
+      '3': [
+        { id: 'tnxh-3-1', question: 'Mặt Trời mọc ở hướng nào và lặn ở hướng nào?', options: ['Mọc hướng Tây, lặn hướng Đông', 'Mọc hướng Đông, lặn hướng Tây', 'Mọc hướng Nam, lặn hướng Bắc', 'Mọc hướng Bắc, lặn hướng Nam'], correctIndex: 1, subject: 'Tự nhiên và Xã hội', grade: '3', explanation: 'Mặt Trời mọc hướng Đông, lặn hướng Tây.' },
+        { id: 'tnxh-3-2', question: 'Cơ quan tuần hoàn có chức năng gì?', options: ['Thở', 'Vận chuyển máu đi nuôi cơ thể', 'Tiêu hóa thức ăn', 'Bài tiết nước tiểu'], correctIndex: 1, subject: 'Tự nhiên và Xã hội', grade: '3', explanation: 'Vận chuyển máu.' }
+      ]
+    },
+    'Lịch sử và Địa lí': {
+      '4': [
+        { id: 'lsdl-4-1', question: 'Thủ đô Hà Nội nằm ở vùng địa lí nào của nước ta?', options: ['Đồng bằng Bắc Bộ', 'Đồng bằng Nam Bộ', 'Tây Nguyên', 'Duyên hải Miền Trung'], correctIndex: 0, subject: 'Lịch sử và Địa lí', grade: '4', explanation: 'Đồng bằng Bắc Bộ.' },
+        { id: 'lsdl-4-2', question: 'Trận đại thắng trên sông Bạch Đằng năm 938 do ai lãnh đạo?', options: ['Hai Bà Trưng', 'Ngô Quyền', 'Lý Thường Kiệt', 'Trần Hưng Đạo'], correctIndex: 1, subject: 'Lịch sử và Địa lí', grade: '4', explanation: 'Ngô Quyền.' }
+      ],
+      '5': [
+        { id: 'lsdl-5-1', question: 'Bác Hồ đọc Tuyên ngôn Độc lập khai sinh nước Việt Nam Dân chủ Cộng hòa vào ngày tháng năm nào?', options: ['19/08/1945', '02/09/1945', '30/04/1975', '07/05/1954'], correctIndex: 1, subject: 'Lịch sử và Địa lí', grade: '5', explanation: '02/09/1945.' },
+        { id: 'lsdl-5-2', question: 'Nước Việt Nam nằm trên bán đảo nào của châu Á?', options: ['Bán đảo Ấn Độ', 'Bán đảo Đông Dương', 'Bán đảo Ả Rập', 'Bán đảo Triều Tiên'], correctIndex: 1, subject: 'Lịch sử và Địa lí', grade: '5', explanation: 'Bán đảo Đông Dương.' }
+      ]
+    }
+  };
+
+  const numGrade = grade === 'all' ? '3' : grade.replace(/\D/g, '') || '3';
+  const targetSub = subject !== 'all' ? subject : 'Toán';
+
+  const subjectData = database[targetSub];
+  if (subjectData) {
+    if (subjectData[numGrade] && subjectData[numGrade].length > 0) {
+      return subjectData[numGrade];
+    }
+    const allGradeQuestions = Object.values(subjectData).flat();
+    if (allGradeQuestions.length > 0) {
+      return allGradeQuestions.map((q) => ({ ...q, grade: numGrade }));
+    }
   }
-];
+
+  // Backup strictly isolated to requested subject & grade
+  return [
+    {
+      id: `generated-${targetSub}-${numGrade}-1`,
+      question: `Câu hỏi ôn tập môn ${cleanSubject} (${cleanGrade}): Nội dung kiến thức nào là đúng nhất?`,
+      options: ['Phương án chuẩn A', 'Phương án B', 'Phương án C', 'Phương án D'],
+      correctIndex: 0,
+      subject: targetSub,
+      grade: numGrade,
+      explanation: `Đáp án A là nội dung chuẩn bài học môn ${cleanSubject}.`
+    },
+    {
+      id: `generated-${targetSub}-${numGrade}-2`,
+      question: `Trong môn ${cleanSubject} (${cleanGrade}), khẳng định nào sau đây chính xác?`,
+      options: ['Khẳng định 1', 'Khẳng định chuẩn 2', 'Khẳng định 3', 'Khẳng định 4'],
+      correctIndex: 1,
+      subject: targetSub,
+      grade: numGrade,
+      explanation: `Khẳng định 2 là đáp án chính xác.`
+    },
+    {
+      id: `generated-${targetSub}-${numGrade}-3`,
+      question: `Vận dụng bài học môn ${cleanSubject} (${cleanGrade}): Chọn đáp án đúng bên dưới.`,
+      options: ['Đáp án 1', 'Đáp án 2', 'Đáp án chính xác 3', 'Đáp án 4'],
+      correctIndex: 2,
+      subject: targetSub,
+      grade: numGrade,
+      explanation: `Đáp án 3 là kết quả bài tập môn ${cleanSubject}.`
+    }
+  ];
+}
+
+const DEFAULT_TUG_QUESTIONS: QuizQuestion[] = getQuestionsForGradeAndSubject('3', 'Toán');
 
 // Cartoon Tug of War Vector Stage matching elementary school drawing style
 export const TugOfWarCartoonStage: React.FC<{
@@ -913,33 +1032,46 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
   const [blueAnswerCount, setBlueAnswerCount] = useState<number>(0);
   const [blueLastResult, setBlueLastResult] = useState<'correct' | 'wrong' | null>(null);
 
-  // Filter available questions from AppState or Fallback
+  // Filter available questions strictly matching selected Grade and Subject
   const availableQuestions = React.useMemo(() => {
-    const allQ = state.quizQuestions && state.quizQuestions.length > 0
-      ? state.quizQuestions
-      : DEFAULT_TUG_QUESTIONS;
-
-    return allQ.filter((q) => {
-      // Grade filter
-      if (selectedGrade !== 'all') {
-        const targetG = String(selectedGrade);
-        const qG = String(q.grade || 'all');
-        if (qG !== 'all' && qG !== targetG) return false;
-      }
-      // Subject filter
-      if (selectedSubject !== 'all' && q.subject && q.subject !== selectedSubject) {
-        return false;
-      }
-      // Folder filter
-      if (selectedFolderId !== 'all') {
-        if (selectedFolderId === 'uncategorized') {
-          if (q.folderId) return false;
-        } else if (q.folderId !== selectedFolderId) {
-          return false;
+    // 1. If user has custom quizQuestions, filter them first
+    let filtered: QuizQuestion[] = [];
+    if (state.quizQuestions && state.quizQuestions.length > 0) {
+      filtered = state.quizQuestions.filter((q) => {
+        // Grade filter
+        if (selectedGrade !== 'all') {
+          const targetG = String(selectedGrade).replace(/\D/g, '');
+          const qG = String(q.grade || 'all').replace(/\D/g, '');
+          if (q.grade !== 'all' && qG !== targetG) return false;
         }
-      }
-      return true;
-    });
+        // Subject filter
+        if (selectedSubject !== 'all') {
+          if (q.subject && q.subject !== selectedSubject) return false;
+        }
+        // Folder filter
+        if (selectedFolderId !== 'all') {
+          if (selectedFolderId === 'uncategorized') {
+            if (q.folderId) return false;
+          } else if (q.folderId !== selectedFolderId) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    // 2. STRICT REQUIREMENT: If custom questions pool is empty for selected filter,
+    // load dedicated questions strictly matching requested Subject and Grade so no other subjects leak in!
+    if (filtered.length === 0) {
+      filtered = getQuestionsForGradeAndSubject(selectedGrade, selectedSubject);
+    }
+
+    // 3. Final strict check: If a specific subject is requested, filter out any non-matching subjects
+    if (selectedSubject !== 'all') {
+      filtered = filtered.filter((q) => q.subject === selectedSubject);
+    }
+
+    return filtered;
   }, [state.quizQuestions, selectedGrade, selectedSubject, selectedFolderId]);
 
   // Track unasked questions pool to guarantee no duplicate questions
@@ -958,7 +1090,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
 
   const questionFoldersList = state.questionFolders || [];
   const allQuizQuestionsList = state.quizQuestions || [];
-  const allQuizQuestionsCount = allQuizQuestionsList.length || DEFAULT_TUG_QUESTIONS.length;
+  const allQuizQuestionsCount = allQuizQuestionsList.length || availableQuestions.length;
 
   // Function to start a new match (Teacher Master Permission Required)
   const startRandomQuestion = () => {
@@ -967,14 +1099,10 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       return;
     }
 
-    const allQ = state.quizQuestions && state.quizQuestions.length > 0
-      ? state.quizQuestions
-      : DEFAULT_TUG_QUESTIONS;
-
-    // Use availableQuestions if filtered pool has items, otherwise fallback to allQ
-    let pool = availableQuestions.length > 0 ? availableQuestions : allQ;
+    // Use availableQuestions which is strictly isolated to selected Subject and Grade!
+    let pool = availableQuestions;
     if (!pool || pool.length === 0) {
-      pool = DEFAULT_TUG_QUESTIONS;
+      pool = getQuestionsForGradeAndSubject(selectedGrade, selectedSubject);
     }
 
     // Filter unasked questions first to ensure no repeats!

@@ -213,6 +213,39 @@ export interface AppState {
   wheelQuizShuffleOptions?: boolean; // Tự động đảo thứ tự các đáp án A B C D khi hiển thị
   usedQuizQuestionIds?: string[]; // IDs of questions already asked, to ensure no duplicates
   worksheets?: WorksheetItem[];
+  dragDropGames?: DragDropGameItem[];
+}
+
+export interface DragDropPair {
+  id: string;
+  image: string; // Base64 data URL, image URL, or emoji/SVG
+  imageType?: 'url' | 'emoji' | 'upload';
+  caption?: string; // Optional caption
+  targetLabel: string; // Correct answer text or target slot name
+  targetGroupId?: string; // Target category/bucket ID if mode is 'sorting'
+  hint?: string; // Optional hint for students
+}
+
+export interface DragDropTargetZone {
+  id: string;
+  label: string; // Group/category name
+  description?: string;
+  color?: string; // 'emerald' | 'sky' | 'rose' | 'amber' | 'purple' | 'indigo'
+}
+
+export interface DragDropGameItem {
+  id: string;
+  title: string;
+  description?: string;
+  subject: string; // 'Toán', 'Tiếng Việt', 'Tiếng Anh', 'Tự nhiên & Xã hội', 'Khoa học', 'Tin học'...
+  grade: string; // 'Khối 1', 'Khối 2', 'Khối 3', 'Khối 4', 'Khối 5', 'Tất cả'
+  mode: 'matching' | 'sorting'; // 'matching': 1-to-1 matching; 'sorting': categorize into buckets
+  timerSeconds?: number; // 0 = no timer
+  pairs: DragDropPair[];
+  targetZones?: DragDropTargetZone[];
+  rewardFlowers?: number; // Default 3 🌺
+  createdAt: string;
+  isPreset?: boolean;
 }
 
 export interface WorksheetQuestion {

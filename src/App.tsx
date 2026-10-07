@@ -52,6 +52,7 @@ import { StatsTab } from './components/tabs/StatsTab';
 import { DataTab } from './components/tabs/DataTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { GamesTab } from './components/tabs/GamesTab';
+import { DragDropTab } from './components/tabs/DragDropTab';
 import { WorksheetsTab } from './components/tabs/WorksheetsTab';
 import { KhdhModule } from './components/KhdhModule';
 
@@ -124,28 +125,36 @@ export default function App() {
 
       try {
         const savedUser = getSavedSessionUser();
-        if (savedUser && active) {
-          const wsKey = getUserWorkspaceKey(savedUser);
-          const cloudState = await loadAppStateFromFirestore(wsKey, savedUser);
-          if (cloudState && active) {
-            // Safe reconciliation: do not wipe out existing local classes/students with empty cloud state
-            const localHasClasses = state.classes && state.classes.length > 0;
-            const cloudHasClasses = cloudState.classes && cloudState.classes.length > 0;
+        const wsKey = getUserWorkspaceKey(savedUser);
+        const cloudState = await loadAppStateFromFirestore(wsKey, savedUser);
+        if (cloudState && active) {
+          // Safe reconciliation: do not wipe out existing local classes/students with empty cloud state
+          const localHasClasses = state.classes && state.classes.length > 0;
+          const cloudHasClasses = cloudState.classes && cloudState.classes.length > 0;
 
-            if (localHasClasses && !cloudHasClasses) {
-              console.log('Preserving local classes and syncing to Cloud Firestore...');
-              saveAppStateToFirestore(wsKey, state, {
-                userId: savedUser.id,
-                teacherName: savedUser.name,
-                role: savedUser.role
-              }).catch(console.warn);
-            } else {
-              setState(cloudState);
-              saveStoredState(savedUser, cloudState);
-            }
+          if (localHasClasses && !cloudHasClasses) {
+            console.log('Preserving local classes and syncing to Cloud Firestore...');
+            saveAppStateToFirestore(wsKey, state, {
+              userId: savedUser?.id || 'guest',
+              teacherName: savedUser?.name || 'Giáo viên',
+              role: savedUser?.role || 'guest'
+            }).catch(console.warn);
+          } else {
+            // Merge custom dragDropGames so created games on both devices are preserved
+            const mergedGames = [
+              ...(cloudState.dragDropGames || []),
+              ...(state.dragDropGames || []).filter(
+                (lg) => !(cloudState.dragDropGames || []).some((cg) => cg.id === lg.id)
+              )
+            ];
+            setState({
+              ...cloudState,
+              dragDropGames: mergedGames.length > 0 ? mergedGames : cloudState.dragDropGames
+            });
+            saveStoredState(savedUser, cloudState);
           }
-          cloudLoadedUserRef.current = savedUser.id;
         }
+        cloudLoadedUserRef.current = savedUser ? savedUser.id : 'guest';
       } catch (err) {
         console.warn('Cloud app state initialization error:', err);
       }
@@ -159,7 +168,6 @@ export default function App() {
 
   // Real-time synchronization across devices / browsers via Firestore onSnapshot
   useEffect(() => {
-    if (!currentUser) return;
     const wsKey = getUserWorkspaceKey(currentUser);
     const unsubscribe = subscribeToUserWorkspace(wsKey, (remoteState) => {
       if (remoteState && remoteState.version) {
@@ -181,10 +189,10 @@ export default function App() {
 
   // Ultra-fast auto-sync whenever state changes: immediate local storage + 150ms background Cloud Firestore save
   useEffect(() => {
-    if (!currentUser) return;
+    saveStoredState(currentUser, state);
 
-    // Do NOT write to Firestore if cloud has not finished loading for this user yet
-    if (cloudLoadedUserRef.current !== currentUser.id) return;
+    // If logged in, wait until initial cloud check completes
+    if (currentUser && cloudLoadedUserRef.current !== currentUser.id) return;
 
     // Do NOT echo-save when the state update came from remote onSnapshot
     if (isRemoteSyncingRef.current) {
@@ -192,16 +200,14 @@ export default function App() {
       return;
     }
 
-    saveStoredState(currentUser, state);
-
     const wsKey = getUserWorkspaceKey(currentUser);
     const timer = setTimeout(async () => {
       setIsCloudSaving(true);
       try {
         const ok = await saveAppStateToFirestore(wsKey, state, {
-          userId: currentUser.id,
-          teacherName: currentUser.name,
-          role: currentUser.role
+          userId: currentUser?.id || 'guest',
+          teacherName: currentUser?.name || 'Giáo viên',
+          role: currentUser?.role || 'guest'
         });
         if (ok) {
           const syncTime = new Date();
@@ -222,15 +228,13 @@ export default function App() {
   // Ensure state is flushed on page unload/close or when switching tabs
   useEffect(() => {
     const flushState = () => {
-      if (currentUser) {
-        saveStoredState(currentUser, state);
-        const wsKey = getUserWorkspaceKey(currentUser);
-        saveAppStateToFirestore(wsKey, state, {
-          userId: currentUser.id,
-          teacherName: currentUser.name,
-          role: currentUser.role
-        }).catch(console.warn);
-      }
+      saveStoredState(currentUser, state);
+      const wsKey = getUserWorkspaceKey(currentUser);
+      saveAppStateToFirestore(wsKey, state, {
+        userId: currentUser?.id || 'guest',
+        teacherName: currentUser?.name || 'Giáo viên',
+        role: currentUser?.role || 'guest'
+      }).catch(console.warn);
     };
 
     const handleVisibility = () => {
@@ -249,15 +253,14 @@ export default function App() {
   }, [state, currentUser]);
 
   const handleForceSync = async (newState: AppState): Promise<boolean> => {
-    if (!currentUser) return false;
     saveStoredState(currentUser, newState);
     setIsCloudSaving(true);
     try {
       const wsKey = getUserWorkspaceKey(currentUser);
       const ok = await saveAppStateToFirestore(wsKey, newState, {
-        userId: currentUser.id,
-        teacherName: currentUser.name,
-        role: currentUser.role
+        userId: currentUser?.id || 'guest',
+        teacherName: currentUser?.name || 'Giáo viên',
+        role: currentUser?.role || 'guest'
       });
       if (ok) {
         const now = new Date();
@@ -448,8 +451,23 @@ export default function App() {
         };
       case 'film':
         return {
-          title: 'Máy Chiếu Phim May Mắn',
-          subtitle: 'Cuộn phim điện ảnh chọn ngẫu nhiên học sinh nhận thưởng'
+          title: 'Đấu Trường Kéo Co Kiến Thức',
+          subtitle: 'Trò chơi đối kháng kéo co sôi động giữa 2 đội với ngân hàng câu hỏi trắc nghiệm'
+        };
+      case 'games':
+        return {
+          title: 'Thư Mục Trò Chơi Lớp Học',
+          subtitle: 'Bộ sưu tập trò chơi tương tác giáo dục giúp bài học thêm sinh động và hứng khởi'
+        };
+      case 'dragdrop':
+        return {
+          title: 'Trò Chơi Kéo Thả Hình Ảnh & Đáp Án',
+          subtitle: 'Kéo thả hình ảnh vào ô đáp án đúng, tự tạo bộ trò chơi sinh động theo môn học & khối lớp'
+        };
+      case 'worksheets':
+        return {
+          title: 'Ngân Hàng Câu Hỏi & Đề Bài',
+          subtitle: 'Soạn thảo câu hỏi trắc nghiệm, bài tập tương tác và quản lý thư mục theo môn'
         };
       case 'noise':
         return {
@@ -618,7 +636,7 @@ export default function App() {
 
         {/* Thanh chọn công cụ Quản lý lớp học hoặc Thư mục Trò chơi ở bên phải */}
         {state.currentPage !== 'khdh' && (
-          ['games', 'wheel', 'film', 'worksheets'].includes(state.currentPage) ? (
+          ['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(state.currentPage) ? (
             <GamesNavBar
               currentPage={state.currentPage}
               onNavigate={handleNavigate}
@@ -735,6 +753,14 @@ export default function App() {
             <FilmTab
               state={state}
               onUpdateState={handleUpdateState}
+            />
+          )}
+
+          {state.currentPage === 'dragdrop' && (
+            <DragDropTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onNavigate={handleNavigate}
             />
           )}
 
