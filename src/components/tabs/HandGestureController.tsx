@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Hand, AlertCircle, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { Camera, CameraOff, Hand, AlertCircle, RefreshCw, Eye, EyeOff, Move, Minus, Maximize2 } from 'lucide-react';
 import { DragDropPair } from '../../types';
 import { computePinchState, initHandLandmarker } from '../../utils/handGesture';
 
@@ -12,6 +12,8 @@ interface HandGestureControllerProps {
   playTick: () => void;
   arenaRef: React.RefObject<HTMLDivElement | null>;
 }
+
+type CameraCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
 
 // Helper DOM highlight functions for instant visual feedback without React re-render overhead
 function highlightDockCard(targetDockId: string | null) {
@@ -51,6 +53,11 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
   const animationFrameRef = useRef<number | null>(null);
   const pointerRef = useRef<HTMLDivElement | null>(null);
   const miniDotRef = useRef<HTMLDivElement | null>(null);
+  const widgetRef = useRef<HTMLDivElement | null>(null);
+
+  // Camera Position & View Modes
+  const [cameraCorner, setCameraCorner] = useState<CameraCorner>('bottom-right');
+  const [isMinimized, setIsMinimized] = useState<boolean>(false);
 
   // Status & Hand Tracking UI State
   const [initStatus, setInitStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -103,6 +110,13 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
       highlightTargetSlot(null);
     }
   }, [dockItems, grabbedItem]);
+
+  // Rotate camera box corner position
+  const cycleCameraCorner = () => {
+    const corners: CameraCorner[] = ['bottom-right', 'bottom-left', 'top-left', 'top-right'];
+    const nextIdx = (corners.indexOf(cameraCorner) + 1) % corners.length;
+    setCameraCorner(corners[nextIdx]);
+  };
 
   // Main Camera & HandLandmarker Loop: ONLY depends on isCameraActive!
   useEffect(() => {
@@ -205,6 +219,22 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
                     if (miniDotRef.current) {
                       miniDotRef.current.style.left = `${nextX * 100}%`;
                       miniDotRef.current.style.top = `${nextY * 100}%`;
+                    }
+
+                    // Auto See-Through Translucency: If hand cursor is near camera widget, fade widget to 20% opacity
+                    if (widgetRef.current) {
+                      const widgetRect = widgetRef.current.getBoundingClientRect();
+                      const widgetCenterX = widgetRect.left + widgetRect.width / 2;
+                      const widgetCenterY = widgetRect.top + widgetRect.height / 2;
+                      const distToWidget = Math.hypot(cursorClientX - widgetCenterX, cursorClientY - widgetCenterY);
+
+                      if (distToWidget < 260) {
+                        widgetRef.current.style.opacity = '0.2';
+                        widgetRef.current.style.pointerEvents = 'none';
+                      } else {
+                        widgetRef.current.style.opacity = '1.0';
+                        widgetRef.current.style.pointerEvents = 'auto';
+                      }
                     }
 
                     const elementsUnderCursor = document.elementsFromPoint(cursorClientX, cursorClientY);
@@ -362,10 +392,20 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
   if (!isCameraActive) return null;
 
+  const cornerPositionClass = {
+    'bottom-right': 'bottom-4 right-4',
+    'bottom-left': 'bottom-4 left-4',
+    'top-right': 'top-4 right-4',
+    'top-left': 'top-4 left-4'
+  }[cameraCorner];
+
   return (
     <>
-      {/* 1. Camera Status Banner & Live Stream Widget */}
-      <div className="fixed bottom-4 right-4 z-[1000] flex flex-col items-end gap-2 max-w-xs animate-in fade-in slide-in-from-bottom-4 duration-200">
+      {/* 1. Camera Status Banner & Live Stream Widget with Auto-Translucency & Position Switcher */}
+      <div
+        ref={widgetRef}
+        className={`fixed ${cornerPositionClass} z-[1000] flex flex-col items-end gap-2 transition-all duration-300 max-w-xs`}
+      >
         <div className="bg-slate-900/95 border-2 border-amber-400/80 shadow-2xl rounded-2xl p-3 text-white backdrop-blur-md w-full space-y-2">
           {/* Header & Controls */}
           <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
@@ -376,84 +416,112 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
               </span>
               <span className="text-xs font-black tracking-wide text-amber-300 uppercase flex items-center gap-1">
                 <Camera className="w-3.5 h-3.5" />
-                Camera Nắm Cả Bàn Tay ✊
+                Camera Tay ✊
               </span>
             </div>
 
             <div className="flex items-center gap-1">
+              {/* Corner Switcher Button */}
+              <button
+                type="button"
+                onClick={cycleCameraCorner}
+                className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] font-bold cursor-pointer flex items-center gap-1"
+                title={`Chuyển vị trí góc camera (Hiện tại: ${cameraCorner})`}
+              >
+                <Move className="w-3 h-3" />
+                <span className="hidden sm:inline text-[9px]">Đổi góc</span>
+              </button>
+
+              {/* Minimize/Maximize Button */}
+              <button
+                type="button"
+                onClick={() => setIsMinimized(!isMinimized)}
+                className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer"
+                title={isMinimized ? 'Mở rộng camera' : 'Thu nhỏ camera'}
+              >
+                {isMinimized ? <Maximize2 className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+              </button>
+
+              {/* Video Preview Toggle */}
               <button
                 type="button"
                 onClick={() => setShowVideoPreview(!showVideoPreview)}
                 className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer"
-                title={showVideoPreview ? 'Ẩn màn hình camera' : 'Hiện màn hình camera'}
+                title={showVideoPreview ? 'Ẩn khung video' : 'Hiện khung video'}
               >
-                {showVideoPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {showVideoPreview ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
               </button>
+
+              {/* Close Camera Button */}
               <button
                 type="button"
                 onClick={onToggleCamera}
                 className="p-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 text-[10px] font-bold cursor-pointer"
                 title="Tắt Camera"
               >
-                <CameraOff className="w-3.5 h-3.5" />
+                <CameraOff className="w-3 h-3" />
               </button>
             </div>
           </div>
 
-          {/* Status Message */}
-          {initStatus === 'loading' && (
-            <div className="flex items-center gap-2 text-xs text-amber-300 py-1 font-bold">
-              <RefreshCw className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
-              <span>Đang kết nối camera & nhận diện bàn tay...</span>
-            </div>
-          )}
-
-          {initStatus === 'error' && (
-            <div className="space-y-1 text-xs text-rose-300 py-1">
-              <div className="flex items-center gap-1 font-bold text-rose-400">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>Không thể kết nối Camera</span>
-              </div>
-              <p className="text-[11px] text-slate-300">{errorMessage}</p>
-            </div>
-          )}
-
-          {initStatus === 'ready' && (
-            <div className="text-xs space-y-1">
-              {isHandDetected ? (
-                <div className="flex items-center justify-between text-emerald-300 font-extrabold bg-emerald-950/60 p-2 rounded-xl border border-emerald-500/30">
-                  <span className="flex items-center gap-1.5">
-                    {isPinching ? '✊ ĐANG NẮM HÌNH' : '🖐 XÒE TAY SẴN SÀNG'}
-                  </span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${isPinching ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-slate-950'}`}>
-                    {isPinching ? 'Nắm cả bàn tay ✊' : 'Xòe bàn tay 🖐'}
-                  </span>
-                </div>
-              ) : (
-                <div className="text-amber-300 font-bold bg-amber-950/40 p-2 rounded-xl border border-amber-500/30 flex items-center gap-1.5">
-                  <Hand className="w-4 h-4 text-amber-400 animate-bounce shrink-0" />
-                  <span>Giơ bàn tay trước camera (Xòe / Nắm tay)!</span>
+          {!isMinimized && (
+            <>
+              {/* Status Message */}
+              {initStatus === 'loading' && (
+                <div className="flex items-center gap-2 text-xs text-amber-300 py-1 font-bold">
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+                  <span>Đang kết nối camera & nhận diện bàn tay...</span>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Video element */}
-          <div className={`relative rounded-xl overflow-hidden bg-black border border-slate-700 ${showVideoPreview ? 'h-32 w-full mt-1' : 'h-0 w-0 border-0'}`}>
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="w-full h-full object-cover transform -scale-x-100"
-            />
-            {showVideoPreview && (
-              <div
-                ref={miniDotRef}
-                className="absolute w-4 h-4 rounded-full bg-amber-400 border-2 border-white transform -translate-x-1/2 -translate-y-1/2 shadow-lg pointer-events-none transition-none"
-                style={{ left: '50%', top: '50%' }}
-              />
-            )}
-          </div>
+              {initStatus === 'error' && (
+                <div className="space-y-1 text-xs text-rose-300 py-1">
+                  <div className="flex items-center gap-1 font-bold text-rose-400">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>Không thể kết nối Camera</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">{errorMessage}</p>
+                </div>
+              )}
+
+              {initStatus === 'ready' && (
+                <div className="text-xs space-y-1">
+                  {isHandDetected ? (
+                    <div className="flex items-center justify-between text-emerald-300 font-extrabold bg-emerald-950/60 p-2 rounded-xl border border-emerald-500/30">
+                      <span className="flex items-center gap-1.5">
+                        {isPinching ? '✊ ĐANG NẮM HÌNH' : '🖐 XÒE TAY SẴN SÀNG'}
+                      </span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${isPinching ? 'bg-amber-400 text-slate-950' : 'bg-emerald-500 text-slate-950'}`}>
+                        {isPinching ? 'Nắm cả bàn tay ✊' : 'Xòe bàn tay 🖐'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-amber-300 font-bold bg-amber-950/40 p-2 rounded-xl border border-amber-500/30 flex items-center gap-1.5">
+                      <Hand className="w-4 h-4 text-amber-400 animate-bounce shrink-0" />
+                      <span>Giơ bàn tay trước camera (Xòe / Nắm tay)!</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Video element */}
+              <div className={`relative rounded-xl overflow-hidden bg-black border border-slate-700 ${showVideoPreview ? 'h-32 w-full mt-1' : 'h-0 w-0 border-0'}`}>
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover transform -scale-x-100"
+                />
+                {showVideoPreview && (
+                  <div
+                    ref={miniDotRef}
+                    className="absolute w-4 h-4 rounded-full bg-amber-400 border-2 border-white transform -translate-x-1/2 -translate-y-1/2 shadow-lg pointer-events-none transition-none"
+                    style={{ left: '50%', top: '50%' }}
+                  />
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 

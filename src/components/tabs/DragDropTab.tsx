@@ -1101,7 +1101,7 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
               ref={arenaRef}
               className={`relative bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 rounded-3xl border-4 border-slate-800 shadow-2xl p-4 sm:p-6 text-white overflow-hidden transition-all ${
                 isFullscreen ? 'fixed inset-0 z-50 rounded-none border-0 h-screen w-screen flex flex-col justify-between overflow-y-auto' : ''
-              }`}
+              } ${isCameraActive ? 'pb-36' : ''}`}
             >
             {/* Top Score, Progress & Timer Bar */}
             <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-800/80">
