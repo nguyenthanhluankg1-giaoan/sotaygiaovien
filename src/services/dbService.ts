@@ -817,3 +817,61 @@ export async function saveContactInfoToFirestore(info: ContactInfo): Promise<boo
     return false;
   }
 }
+
+const SHARED_GAMES_CACHE_PREFIX = 'dragdrop_shared_cache_';
+
+/**
+ * Save shared Drag & Drop game payload to Firestore with local storage caching
+ */
+export async function saveSharedGameToFirestore(shareId: string, gameData: any): Promise<boolean> {
+  try {
+    localStorage.setItem(`${SHARED_GAMES_CACHE_PREFIX}${shareId}`, JSON.stringify(gameData));
+  } catch (e) {
+    console.warn('Failed to save shared game to local storage:', e);
+  }
+
+  try {
+    const docRef = doc(db, 'shared_dragdrop_games', shareId);
+    await setDoc(docRef, {
+      id: shareId,
+      game: gameData,
+      createdAt: new Date().toISOString()
+    });
+    return true;
+  } catch (err) {
+    console.warn('Failed to save shared game to Firestore:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch shared Drag & Drop game payload from Firestore or local cache
+ */
+export async function fetchSharedGameFromFirestore(shareId: string): Promise<any | null> {
+  try {
+    const docRef = doc(db, 'shared_dragdrop_games', shareId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const game = snap.data()?.game || null;
+      if (game) {
+        try {
+          localStorage.setItem(`${SHARED_GAMES_CACHE_PREFIX}${shareId}`, JSON.stringify(game));
+        } catch (e) {}
+        return game;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch shared game from Firestore:', err);
+  }
+
+  try {
+    const cached = localStorage.getItem(`${SHARED_GAMES_CACHE_PREFIX}${shareId}`);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.warn('Failed to read cached shared game:', e);
+  }
+
+  return null;
+}

@@ -38,13 +38,18 @@ import {
   ZoomIn,
   ZoomOut,
   Camera,
-  CameraOff
+  CameraOff,
+  Share2,
+  Globe,
+  QrCode,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppState, DragDropGameItem, DragDropPair, DragDropTargetZone } from '../../types';
 import { playBeep, playCelebration, playTick, playWrongSound, playApplauseSound } from '../../utils/audio';
 import { DEFAULT_DRAG_DROP_GAMES, PRESET_CENTER_IMAGES, EDUCATIONAL_EMOJI_LIBRARY, EducationalEmojiItem } from '../../utils/dragDropPresets';
 import { uid, compressImageFile } from '../../utils/helpers';
+import { saveSharedGameToFirestore, fetchSharedGameFromFirestore } from '../../services/dbService';
 import { HandGestureController } from './HandGestureController';
 
 interface DragDropTabProps {
@@ -70,9 +75,68 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
   // Main View Mode: 'play' | 'manage' (Default to 'manage' - Tạo & Quản lý)
   const [activeTab, setActiveTab] = useState<'play' | 'manage'>('manage');
 
-  // Always reset to 'manage' (Tạo & Quản lý) mode when entering this tab
+  // Share Game Modal States
+  const [shareModalGame, setShareModalGame] = useState<DragDropGameItem | null>(null);
+  const [shareUrl, setShareUrl] = useState<string>('');
+  const [isSharingLoading, setIsSharingLoading] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+  const [sharedNoticeBanner, setSharedNoticeBanner] = useState<string | null>(null);
+
+  // Check URL parameters on mount to load shared games automatically for multi-device play
   useEffect(() => {
-    setActiveTab('manage');
+    let active = true;
+    async function checkSharedLink() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const shareId = params.get('shareId');
+        const gameIdParam = params.get('gameId');
+
+        if (shareId) {
+          const fetchedGame = await fetchSharedGameFromFirestore(shareId);
+          if (fetchedGame && active) {
+            onUpdateState((prev) => {
+              const existingIndex = (prev.dragDropGames || []).findIndex((g) => g.id === fetchedGame.id);
+              let updatedGames = [...(prev.dragDropGames || [])];
+              if (existingIndex >= 0) {
+                updatedGames[existingIndex] = fetchedGame;
+              } else {
+                updatedGames = [fetchedGame, ...updatedGames];
+              }
+              return {
+                ...prev,
+                dragDropGames: updatedGames
+              };
+            });
+
+            setSelectedGameId(fetchedGame.id);
+            setActiveTab('play');
+            setSharedNoticeBanner(`🎮 Bạn đã vào thành công trò chơi chia sẻ: "${fetchedGame.title}"!`);
+            return;
+          }
+        }
+
+        if (gameIdParam) {
+          const found = gamesList.find((g) => g.id === gameIdParam);
+          if (found && active) {
+            setSelectedGameId(found.id);
+            setActiveTab('play');
+            setSharedNoticeBanner(`🎮 Đã chọn trò chơi chia sẻ: "${found.title}"!`);
+            return;
+          }
+        }
+
+        // Default to 'manage' (Tạo & Quản lý) if no share params
+        setActiveTab('manage');
+      } catch (err) {
+        console.warn('Check shared link error:', err);
+        setActiveTab('manage');
+      }
+    }
+
+    checkSharedLink();
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Filter for selecting games
@@ -492,6 +556,36 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
     setCorrectCount((prev) => Math.max(0, prev - 1));
     setScore((prev) => Math.max(0, prev - 10));
     if (soundEnabled) playTick();
+  };
+
+  // 4. Share Game Link for Multi-device Play
+  const handleOpenShareModal = async (game: DragDropGameItem) => {
+    setShareModalGame(game);
+    setIsSharingLoading(true);
+    setCopiedLink(false);
+
+    try {
+      // Use existing ID or generate a stable share ID
+      const shareId = game.id || `share-${uid()}`;
+      await saveSharedGameToFirestore(shareId, game);
+
+      const baseUrl = window.location.origin + window.location.pathname;
+      const fullUrl = `${baseUrl}?tab=dragdrop&shareId=${shareId}`;
+      setShareUrl(fullUrl);
+    } catch (e) {
+      console.warn('Error saving shared game to Firestore:', e);
+      const baseUrl = window.location.origin + window.location.pathname;
+      setShareUrl(`${baseUrl}?tab=dragdrop&gameId=${game.id}`);
+    } finally {
+      setIsSharingLoading(false);
+    }
+  };
+
+  const handleCopyShareUrl = () => {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
   };
 
   // 5. Game Creator & Customizer State
@@ -1095,6 +1189,19 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                 <span className="hidden sm:inline">Chơi lại</span>
               </button>
 
+              {/* Share Game Link for Multi-device Play */}
+              {activeGame && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenShareModal(activeGame)}
+                  className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                  title="Chia sẻ đường link trò chơi này cho nhiều máy tính chơi cùng lúc"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="hidden sm:inline">Chia sẻ link</span>
+                </button>
+              )}
+
               {/* Fullscreen Button */}
               <button
                 type="button"
@@ -1106,6 +1213,26 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Shared Game Notice Banner */}
+          {sharedNoticeBanner && (
+            <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white px-4 py-3 rounded-2xl shadow-md flex items-center justify-between gap-3 text-xs sm:text-sm font-bold animate-in fade-in slide-in-from-top-2 border border-blue-400">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-xl bg-white/20">
+                  <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+                </div>
+                <span>{sharedNoticeBanner}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSharedNoticeBanner(null)}
+                className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white cursor-pointer transition-all"
+                title="Đóng thông báo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           {/* GAME ARENA CONTAINER */}
           {!activeGame ? (
@@ -2090,6 +2217,16 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
+                        onClick={() => handleOpenShareModal(game)}
+                        className="px-2 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer border border-blue-200"
+                        title="Chia sẻ đường link trò chơi này cho nhiều máy tính chơi cùng lúc"
+                      >
+                        <Share2 className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Chia sẻ</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleDuplicateGame(game)}
                         className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all cursor-pointer"
                         title="Tạo bản sao trò chơi này"
@@ -2924,6 +3061,153 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                 Đồng ý Xóa Tất Cả
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. SHARE GAME MODAL (FOR MULTI-COMPUTER SIMULTANEOUS PLAY) */}
+      {shareModalGame && (
+        <div className="fixed inset-0 z-[1100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border-2 border-blue-400 max-w-xl w-full p-6 sm:p-8 space-y-6 text-slate-800 shadow-2xl relative">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-blue-100 text-blue-700">
+                  <Share2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 leading-snug">
+                    Chia Sẻ Trò Chơi Cho Nhiều Máy Tính
+                  </h3>
+                  <p className="text-xs font-medium text-slate-500">
+                    Học sinh có thể tham gia và thực hành cùng lúc trên các máy tính/máy tính bảng khác nhau!
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareModalGame(null)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 cursor-pointer transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Game Info Badge */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-bold text-slate-400 block text-[10px]">Trò chơi được chọn:</span>
+                <span className="font-black text-slate-900 text-sm">{shareModalGame.title}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-bold">
+                  {shareModalGame.subject}
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-800 font-bold">
+                  {shareModalGame.grade}
+                </span>
+              </div>
+            </div>
+
+            {/* Loading state or Share Link & QR Code */}
+            {isSharingLoading ? (
+              <div className="py-10 text-center space-y-3">
+                <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs font-bold text-slate-600">
+                  Đang khởi tạo liên kết chia sẻ trực tuyến trên Cloud Firestore...
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Direct Link Input & Copy Button */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                    <Globe className="w-4 h-4 text-blue-600" />
+                    Đường Link Trực Tiếp Cho Học Sinh:
+                  </label>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={shareUrl}
+                      className="flex-1 bg-slate-100 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-slate-800 select-all focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyShareUrl}
+                      className={`px-4 py-2.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0 ${
+                        copiedLink
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-blue-600 hover:bg-blue-500 text-white active:scale-95'
+                      }`}
+                    >
+                      {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedLink ? '✓ Đã Sao Chép!' : 'Sao chép Link'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* QR Code & Multi-computer Guide Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center bg-gradient-to-br from-blue-50 to-indigo-50/50 p-4 rounded-2xl border border-blue-200/80">
+                  {/* Left: QR Code */}
+                  <div className="sm:col-span-5 flex flex-col items-center justify-center text-center space-y-1.5">
+                    <div className="p-2 bg-white rounded-2xl shadow-md border border-slate-200">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
+                          shareUrl
+                        )}&color=0f172a&bgcolor=ffffff`}
+                        alt="QR Code Trò Chơi"
+                        className="w-32 h-32 sm:w-36 sm:h-36 object-contain rounded-lg"
+                      />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                      <QrCode className="w-3.5 h-3.5 text-blue-600" />
+                      Quét mã QR bằng Điện thoại / iPad
+                    </span>
+                  </div>
+
+                  {/* Right: classroom computer guide */}
+                  <div className="sm:col-span-7 space-y-2 text-xs text-slate-700">
+                    <h4 className="font-black text-slate-900 flex items-center gap-1.5 text-sm">
+                      💻 Hướng Dẫn Chơi Cùng Lúc
+                    </h4>
+                    <ul className="space-y-1.5 list-disc list-inside font-medium leading-relaxed text-[11px] text-slate-600">
+                      <li>
+                        Sao chép link và dán vào Zalo nhóm lớp, Google Classroom, hoặc máy tính học sinh.
+                      </li>
+                      <li>
+                        Mỗi học sinh chỉ cần bấm đường link sẽ <strong>vào thẳng màn chơi</strong> ngay lập tức!
+                      </li>
+                      <li>
+                        Tương thích hoàn hảo trên tất cả máy tính phòng tin học, máy tính bảng và điện thoại.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <a
+                    href={shareUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Mở thử link trên Tab mới</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => setShareModalGame(null)}
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md cursor-pointer transition-all active:scale-95"
+                  >
+                    Hoàn tất & Đóng
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

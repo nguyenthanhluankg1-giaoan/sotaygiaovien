@@ -161,6 +161,21 @@ export default function App() {
     }
 
     initializeFromCloud();
+
+    // Check if user accessed via shared game link (URL search parameters)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('page');
+      const shareIdParam = params.get('shareId') || params.get('gameId');
+      const gameParam = params.get('game');
+
+      if (tabParam === 'dragdrop' || shareIdParam || gameParam === 'dragdrop') {
+        setState((prev) => ({ ...prev, currentPage: 'dragdrop' }));
+      }
+    } catch (e) {
+      console.warn('URL search params parse error:', e);
+    }
+
     return () => {
       active = false;
     };

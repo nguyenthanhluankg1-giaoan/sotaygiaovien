@@ -115,6 +115,16 @@
         "updatedBy": { "type": "string" },
         "lastUpdated": { "type": "string" }
       }
+    },
+    "SharedDragDropGame": {
+      "title": "Shared Drag Drop Game",
+      "description": "Shared game configuration for multi-device play",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "game": { "type": "object" },
+        "createdAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -145,6 +155,10 @@
     "/tug_of_war_rooms/{roomId}": {
       "schema": "TugOfWarRoom",
       "description": "Real-time game room state for Tug-of-War"
+    },
+    "/shared_dragdrop_games/{shareId}": {
+      "schema": "SharedDragDropGame",
+      "description": "Shared drag and drop game payloads"
     }
   }
 }

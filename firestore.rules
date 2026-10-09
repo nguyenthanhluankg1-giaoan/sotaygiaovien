@@ -54,6 +54,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /shared_dragdrop_games/{shareId} {
+      allow read, write: if true;
+    }
+
+    match /shared_games/{shareId} {
+      allow read, write: if true;
+    }
+
     // Test connection collection
     match /test/{docId} {
       allow read, write: if true;
