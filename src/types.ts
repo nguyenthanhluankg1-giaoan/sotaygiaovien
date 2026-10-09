@@ -225,6 +225,7 @@ export interface MeetingFolder {
   description?: string;
   color?: string; // HEX color or tailwind color
   type: 'personal' | 'department'; // 'personal' for Sổ họp cá nhân, 'department' for BIÊN BẢN TỔ KHỐI
+  parentId?: string; // Optional parent folder ID for nested desktop folders
   createdAt?: string;
 }
 

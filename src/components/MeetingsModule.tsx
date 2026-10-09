@@ -29,7 +29,12 @@ import {
   FolderOpen,
   Tag,
   LayoutList,
-  LayoutGrid
+  LayoutGrid,
+  ArrowLeft,
+  CornerUpLeft,
+  Move,
+  HardDrive,
+  FolderTree
 } from 'lucide-react';
 import { AppState, PersonalMeetingItem, DepartmentMeetingItem, MeetingFolder, UserAccount } from '../types';
 import { uid, today, nowTime } from '../utils/helpers';
@@ -179,12 +184,76 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [editingFolder, setEditingFolder] = useState<MeetingFolder | null>(null);
 
+  // Moving Target State (Move items / folders)
+  const [movingTarget, setMovingTarget] = useState<{
+    type: 'folder' | 'personal' | 'department';
+    id: string;
+    title: string;
+    currentFolderId?: string;
+  } | null>(null);
+
   const meetingFolders = state.meetingFolders || [];
   const activeTabFolders = meetingFolders.filter((f) => f.type === activeTab);
 
   React.useEffect(() => {
     setSelectedFolderId('all');
   }, [activeTab]);
+
+  // Helper functions for desktop folder navigation
+  const getSubfoldersCount = (folderId: string) => {
+    return activeTabFolders.filter((f) => f.parentId === folderId).length;
+  };
+
+  const getFilesCount = (folderId: string) => {
+    if (activeTab === 'personal') {
+      return (state.personalMeetings || []).filter((pm) => pm.folderId === folderId).length;
+    }
+    return (state.departmentMeetings || []).filter((dm) => dm.folderId === folderId).length;
+  };
+
+  const getBreadcrumbs = () => {
+    const rootName = activeTab === 'personal' ? 'Sổ họp cá nhân' : 'Biên bản Tổ khối';
+    if (selectedFolderId === 'all') {
+      return [{ id: 'all', name: rootName }];
+    }
+    if (selectedFolderId === 'uncategorized') {
+      return [
+        { id: 'all', name: rootName },
+        { id: 'uncategorized', name: 'Chưa phân loại' }
+      ];
+    }
+
+    const crumbs: { id: string; name: string }[] = [{ id: 'all', name: rootName }];
+    const chain: MeetingFolder[] = [];
+    let curr = meetingFolders.find((f) => f.id === selectedFolderId);
+    while (curr) {
+      chain.unshift(curr);
+      curr = curr.parentId ? meetingFolders.find((f) => f.id === curr!.parentId) : undefined;
+    }
+    chain.forEach((f) => crumbs.push({ id: f.id, name: f.name }));
+    return crumbs;
+  };
+
+  const handleGoUp = () => {
+    if (selectedFolderId === 'all' || selectedFolderId === 'uncategorized') return;
+    const current = meetingFolders.find((f) => f.id === selectedFolderId);
+    if (current && current.parentId) {
+      setSelectedFolderId(current.parentId);
+    } else {
+      setSelectedFolderId('all');
+    }
+  };
+
+  // Compute subfolders in current view scope
+  const currentSubfolders = activeTabFolders.filter((f) => {
+    if (selectedFolderId === 'all') {
+      return !f.parentId;
+    }
+    if (selectedFolderId === 'uncategorized') {
+      return false;
+    }
+    return f.parentId === selectedFolderId;
+  });
 
   // Personal Meeting Modal state
   const [isPersonalModalOpen, setIsPersonalModalOpen] = useState(false);
@@ -292,6 +361,11 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
     const name = (formData.get('name') as string) || 'Thư mục mới';
     const description = (formData.get('description') as string) || '';
     const color = (formData.get('color') as string) || '#0d9488';
+    const parentIdForm = (formData.get('parentId') as string) || undefined;
+    const finalParentId =
+      parentIdForm === 'root' || parentIdForm === 'all'
+        ? undefined
+        : editingFolder?.parentId ?? (selectedFolderId !== 'all' && selectedFolderId !== 'uncategorized' ? selectedFolderId : parentIdForm);
 
     const newFolder: MeetingFolder = {
       id: editingFolder ? editingFolder.id : uid('mf'),
@@ -299,6 +373,7 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
       description,
       color,
       type: activeTab,
+      parentId: finalParentId,
       createdAt: editingFolder ? editingFolder.createdAt : new Date().toISOString()
     };
 
@@ -318,6 +393,39 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
 
     setIsFolderModalOpen(false);
     setEditingFolder(null);
+  };
+
+  // Confirm Move item / folder to destination
+  const handleConfirmMove = (destinationFolderId: string) => {
+    if (!movingTarget) return;
+
+    const targetFolderId =
+      destinationFolderId === 'root' || destinationFolderId === 'all' ? undefined : destinationFolderId;
+
+    if (movingTarget.type === 'folder') {
+      onUpdateState((prev) => ({
+        ...prev,
+        meetingFolders: (prev.meetingFolders || []).map((f) =>
+          f.id === movingTarget.id ? { ...f, parentId: targetFolderId } : f
+        )
+      }));
+    } else if (movingTarget.type === 'personal') {
+      onUpdateState((prev) => ({
+        ...prev,
+        personalMeetings: (prev.personalMeetings || []).map((pm) =>
+          pm.id === movingTarget.id ? { ...pm, folderId: targetFolderId } : pm
+        )
+      }));
+    } else if (movingTarget.type === 'department') {
+      onUpdateState((prev) => ({
+        ...prev,
+        departmentMeetings: (prev.departmentMeetings || []).map((dm) =>
+          dm.id === movingTarget.id ? { ...dm, folderId: targetFolderId } : dm
+        )
+      }));
+    }
+
+    setMovingTarget(null);
   };
 
   // Delete Folder
@@ -992,134 +1100,187 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
         </div>
       </div>
 
-      {/* Sub-Folders Filter Bar */}
-      <div className="bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl p-2 sm:px-3 shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 flex-1 min-w-0">
-          <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 shrink-0 mr-1 flex items-center gap-1">
-            <Folder className="w-3.5 h-3.5 text-teal-600" />
-            <span>Thư mục:</span>
-          </span>
+      {/* Desktop Address Bar & Navigation */}
+      <div className="bg-slate-900 text-white rounded-2xl p-2.5 sm:px-4 sm:py-3 shadow-md flex flex-col md:flex-row items-center justify-between gap-3 border border-slate-800">
+        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto flex-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={handleGoUp}
+            disabled={selectedFolderId === 'all' || selectedFolderId === 'uncategorized'}
+            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-teal-400 cursor-pointer transition-colors shrink-0 flex items-center gap-1 text-xs font-bold"
+            title="Trở về thư mục cấp trên"
+          >
+            <CornerUpLeft className="w-4 h-4" />
+            <span className="inline">Trở về</span>
+          </button>
 
-          {/* All Folder Pill */}
+          <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs font-semibold overflow-x-auto flex-1 min-w-0">
+            <span className="text-slate-400 flex items-center gap-1 shrink-0">
+              <HardDrive className="w-3.5 h-3.5 text-teal-400" />
+              <span className="hidden sm:inline font-bold">Máy tính</span>
+              <span>/</span>
+            </span>
+
+            {getBreadcrumbs().map((crumb, idx, arr) => {
+              const isLast = idx === arr.length - 1;
+              return (
+                <React.Fragment key={crumb.id}>
+                  {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-500 shrink-0" />}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFolderId(crumb.id)}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      isLast
+                        ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    {crumb.name}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-end">
           <button
             type="button"
             onClick={() => setSelectedFolderId('all')}
-            className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
               selectedFolderId === 'all'
-                ? 'bg-teal-700 text-white shadow-2xs'
-                : 'bg-slate-100 hover:bg-slate-200/80 text-slate-700'
+                ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
           >
-            <span>Tất cả</span>
-            <span
-              className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                selectedFolderId === 'all' ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-700'
-              }`}
-            >
-              {activeTab === 'personal' ? personalMeetings.length : departmentMeetings.length}
-            </span>
+            📁 Thư mục gốc
           </button>
-
-          {/* Custom Folders Pills */}
-          {activeTabFolders.map((f) => {
-            const count =
-              activeTab === 'personal'
-                ? personalMeetings.filter((pm) => pm.folderId === f.id).length
-                : departmentMeetings.filter((dm) => dm.folderId === f.id).length;
-            const isSelected = selectedFolderId === f.id;
-
-            return (
-              <div
-                key={f.id}
-                className={`group flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer border ${
-                  isSelected
-                    ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white border-teal-700 shadow-2xs'
-                    : 'bg-white hover:bg-teal-50/80 text-slate-700 border-slate-200/90'
-                }`}
-                onClick={() => setSelectedFolderId(f.id)}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: f.color || '#0d9488' }}
-                />
-                <span className="truncate max-w-[140px]">{f.name}</span>
-                <span
-                  className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                    isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {count}
-                </span>
-
-                {/* Edit / Delete Folder triggers on hover */}
-                <div className="hidden group-hover:flex items-center gap-0.5 ml-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingFolder(f);
-                      setIsFolderModalOpen(true);
-                    }}
-                    className="p-0.5 rounded text-slate-400 hover:text-teal-600"
-                    title="Sửa tên thư mục"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteFolder(f.id, f.name);
-                    }}
-                    className="p-0.5 rounded text-slate-400 hover:text-rose-600"
-                    title="Xóa thư mục"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Uncategorized Pill */}
           <button
             type="button"
-            onClick={() => setSelectedFolderId('uncategorized')}
-            className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              selectedFolderId === 'uncategorized'
-                ? 'bg-teal-700 text-white shadow-2xs'
-                : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
-            }`}
+            onClick={() => {
+              setEditingFolder(null);
+              setIsFolderModalOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+            title="Tạo thư mục con tại đây"
           >
-            <span>Chưa phân loại</span>
-            <span
-              className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                selectedFolderId === 'uncategorized'
-                  ? 'bg-white/25 text-white'
-                  : 'bg-slate-200 text-slate-700'
-              }`}
-            >
-              {activeTab === 'personal'
-                ? personalMeetings.filter((pm) => !pm.folderId || pm.folderId === 'uncategorized').length
-                : departmentMeetings.filter((dm) => !dm.folderId || dm.folderId === 'uncategorized').length}
-            </span>
+            <FolderPlus className="w-3.5 h-3.5" />
+            <span>+ Tạo thư mục con</span>
           </button>
         </div>
-
-        {/* Add Folder Button */}
-        <button
-          type="button"
-          onClick={() => {
-            setEditingFolder(null);
-            setIsFolderModalOpen(true);
-          }}
-          className="px-2.5 py-1 rounded-xl bg-teal-50 hover:bg-teal-100/90 text-teal-800 font-extrabold text-xs border border-teal-200/80 flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
-          title="Tạo thư mục mới"
-        >
-          <FolderPlus className="w-3.5 h-3.5 text-teal-600" />
-          <span className="hidden sm:inline">Tạo thư mục</span>
-        </button>
       </div>
+
+      {/* Desktop Subfolders Grid */}
+      {currentSubfolders.length > 0 && (
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200/80 p-3 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-black uppercase text-slate-500 tracking-wider px-1">
+            <span className="flex items-center gap-1.5">
+              <FolderTree className="w-4 h-4 text-teal-600" />
+              <span>Thư mục con ({currentSubfolders.length})</span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-bold hidden sm:inline">
+              💡 Bấm đúp (hoặc bấm "Mở") để mở thư mục
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            {currentSubfolders.map((f) => {
+              const subCount = getSubfoldersCount(f.id);
+              const fileCount = getFilesCount(f.id);
+
+              return (
+                <div
+                  key={f.id}
+                  onDoubleClick={() => setSelectedFolderId(f.id)}
+                  className="group relative bg-gradient-to-b from-white to-slate-50/80 rounded-2xl border border-slate-200/90 hover:border-teal-400 p-3 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
+                        style={{ backgroundColor: `${f.color || '#0d9488'}20`, color: f.color || '#0d9488' }}
+                      >
+                        <FolderOpen className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-teal-700 truncate leading-snug">
+                          {f.name}
+                        </h4>
+                        <p className="text-[10px] text-slate-500 line-clamp-1">
+                          {f.description || 'Thư mục máy tính'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-500">
+                    <div className="flex items-center gap-1">
+                      {subCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded bg-teal-50 text-teal-800 border border-teal-200/60">
+                          {subCount} mục con
+                        </span>
+                      )}
+                      <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
+                        {fileCount} tập tin
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFolderId(f.id)}
+                        className="px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[10px] cursor-pointer"
+                        title="Mở thư mục"
+                      >
+                        Mở
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMovingTarget({
+                            type: 'folder',
+                            id: f.id,
+                            title: f.name,
+                            currentFolderId: f.parentId
+                          });
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
+                        title="Di chuyển thư mục"
+                      >
+                        <Move className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingFolder(f);
+                          setIsFolderModalOpen(true);
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-teal-600 hover:bg-slate-100 cursor-pointer"
+                        title="Sửa tên thư mục"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteFolder(f.id, f.name);
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                        title="Xóa thư mục"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Content Area */}
       {activeTab === 'personal' ? (
@@ -1238,6 +1399,21 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                               </button>
                               <button
                                 type="button"
+                                onClick={() =>
+                                  setMovingTarget({
+                                    type: 'personal',
+                                    id: item.id,
+                                    title: item.title,
+                                    currentFolderId: item.folderId
+                                  })
+                                }
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                title="Di chuyển vào thư mục khác"
+                              >
+                                <Move className="w-4 h-4 text-indigo-600" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setEditingPersonal(item);
                                   setIsPersonalModalOpen(true);
@@ -1346,6 +1522,21 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                         title="Xuất file Word (.doc) chuẩn hành chính"
                       >
                         <Download className="w-4 h-4 text-teal-600" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMovingTarget({
+                            type: 'personal',
+                            id: item.id,
+                            title: item.title,
+                            currentFolderId: item.folderId
+                          })
+                        }
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                        title="Di chuyển vào thư mục khác"
+                      >
+                        <Move className="w-4 h-4 text-indigo-600" />
                       </button>
                       <button
                         type="button"
@@ -1493,6 +1684,21 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                               </button>
                               <button
                                 type="button"
+                                onClick={() =>
+                                  setMovingTarget({
+                                    type: 'department',
+                                    id: item.id,
+                                    title: item.title,
+                                    currentFolderId: item.folderId
+                                  })
+                                }
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                title="Di chuyển vào thư mục khác"
+                              >
+                                <Move className="w-4 h-4 text-indigo-600" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setEditingDepartment(item);
                                   setIsDepartmentModalOpen(true);
@@ -1608,6 +1814,21 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                       </button>
                       <button
                         type="button"
+                        onClick={() =>
+                          setMovingTarget({
+                            type: 'department',
+                            id: item.id,
+                            title: item.title,
+                            currentFolderId: item.folderId
+                          })
+                        }
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                        title="Di chuyển vào thư mục khác"
+                      >
+                        <Move className="w-4 h-4 text-indigo-600" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => {
                           setEditingDepartment(item);
                           setIsDepartmentModalOpen(true);
@@ -1682,6 +1903,27 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                   placeholder="Mô tả ngắn gọn về các ghi chép lưu trong thư mục..."
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-teal-500"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Thư mục mẹ (Vị trí lưu trữ)</label>
+                <select
+                  name="parentId"
+                  defaultValue={
+                    editingFolder?.parentId ||
+                    (selectedFolderId !== 'all' && selectedFolderId !== 'uncategorized' ? selectedFolderId : 'root')
+                  }
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-teal-500"
+                >
+                  <option value="root">📁 Thư mục gốc (Gốc không gian làm việc)</option>
+                  {activeTabFolders
+                    .filter((f) => f.id !== editingFolder?.id)
+                    .map((f) => (
+                      <option key={f.id} value={f.id}>
+                        📁 {f.name}
+                      </option>
+                    ))}
+                </select>
               </div>
 
               <div className="space-y-1">
@@ -2538,6 +2780,78 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
               >
                 Đóng
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL 5: MOVE ITEM / FOLDER TO DESTINATION */}
+      {/* ========================================== */}
+      {movingTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-teal-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 bg-gradient-to-r from-teal-700 to-teal-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Move className="w-5 h-5" />
+                <h3 className="font-extrabold text-base">Di Chuyển Về Thư Mục Khác</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMovingTarget(null)}
+                className="p-1 text-white/80 hover:text-white rounded-xl cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Tên đối tượng di chuyển:</p>
+                <p className="text-sm font-extrabold text-slate-900 mt-0.5 flex items-center gap-1.5">
+                  {movingTarget.type === 'folder' ? '📁' : '📄'} {movingTarget.title}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700">Chọn thư mục đích (*)</label>
+                <select
+                  id="destinationFolderSelect"
+                  defaultValue={movingTarget.currentFolderId || 'root'}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-teal-500"
+                >
+                  <option value="root">📁 Thư mục gốc (Root không gian làm việc)</option>
+                  {activeTabFolders
+                    .filter((f) => f.id !== movingTarget.id)
+                    .map((f) => (
+                      <option key={f.id} value={f.id}>
+                        📁 {f.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMovingTarget(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const select = document.getElementById('destinationFolderSelect') as HTMLSelectElement;
+                    if (select) {
+                      handleConfirmMove(select.value);
+                    }
+                  }}
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-md shadow-teal-600/20 cursor-pointer"
+                >
+                  Xác nhận Di chuyển
+                </button>
+              </div>
             </div>
           </div>
         </div>
