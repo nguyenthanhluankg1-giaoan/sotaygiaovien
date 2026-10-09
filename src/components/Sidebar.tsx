@@ -17,6 +17,7 @@ import {
   Database,
   Settings,
   BookOpen,
+  ClipboardList,
   ShieldCheck,
   LogOut,
   X,
@@ -63,8 +64,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Thư mục hiện tại
-  const [activeFolderState, setActiveFolderState] = useState<'classroom' | 'khdh' | 'games'>(
-    currentPage === 'khdh' ? 'khdh' : 'classroom'
+  const [activeFolderState, setActiveFolderState] = useState<'classroom' | 'khdh' | 'games' | 'meetings'>(
+    currentPage === 'khdh' ? 'khdh' : ['personal_meeting', 'department_meeting'].includes(currentPage) ? 'meetings' : 'classroom'
   );
 
   useEffect(() => {
@@ -72,7 +73,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       setActiveFolderState('khdh');
     } else if (['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(currentPage)) {
       setActiveFolderState('games');
-    } else if (activeFolderState === 'khdh' || activeFolderState === 'games') {
+    } else if (['personal_meeting', 'department_meeting'].includes(currentPage)) {
+      setActiveFolderState('meetings');
+    } else if (activeFolderState === 'khdh' || activeFolderState === 'games' || activeFolderState === 'meetings') {
       setActiveFolderState('classroom');
     }
   }, [currentPage]);
@@ -84,6 +87,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'film', label: 'Trò chơi Kéo co', icon: Swords, badge: 'HOT' },
     { id: 'dragdrop', label: 'Kéo thả nối hình', icon: Move, badge: 'MỚI' },
     { id: 'worksheets', label: 'Ngân hàng câu hỏi', icon: FileCheck, badge: 'TẠO CH' }
+  ];
+
+  const meetingItems = [
+    { id: 'personal_meeting', label: 'Sổ họp cá nhân', icon: BookOpen, badge: 'SỔ HỌP' },
+    { id: 'department_meeting', label: 'BIÊN BẢN TỔ KHỐI', icon: ClipboardList, badge: 'BIÊN BẢN' }
   ];
 
   const [khdhTab, setKhdhTab] = useState<string>(() => {
@@ -125,6 +133,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleSelectGamesFolder = () => {
     setActiveFolderState('games');
     onNavigate('games');
+    onClose();
+  };
+
+  const handleSelectMeetingsFolder = () => {
+    setActiveFolderState('meetings');
+    onNavigate('personal_meeting');
     onClose();
   };
 
@@ -298,7 +312,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </button>
 
-            {/* 3. Thư mục TRÒ CHƠI */}
+            {/* 3. Thư mục SỔ HỌP */}
+            <button
+              type="button"
+              onClick={handleSelectMeetingsFolder}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl transition-all text-left cursor-pointer border ${
+                activeFolder === 'meetings'
+                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white border-teal-600 shadow-md shadow-teal-600/20 font-black'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/90 font-bold hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Folder
+                  className={`w-4 h-4 shrink-0 ${
+                    activeFolder === 'meetings' ? 'text-white' : 'text-slate-500'
+                  }`}
+                />
+                <span className="text-[13px] tracking-tight truncate font-extrabold uppercase">SỔ HỌP</span>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                  activeFolder === 'meetings'
+                    ? 'bg-white/25 text-white'
+                    : 'bg-teal-100 text-teal-800'
+                }`}
+              >
+                2
+              </span>
+            </button>
+
+            {/* 4. Thư mục TRÒ CHƠI */}
             <button
               type="button"
               onClick={handleSelectGamesFolder}
@@ -363,6 +406,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 <p className="text-[11px] font-medium text-slate-600 leading-snug">
                   Tất cả <span className="font-bold text-teal-700">{khdhItems.length} công cụ</span> được hiển thị đầy đủ trên thanh chọn phía trên bên phải.
+                </p>
+              </div>
+            </div>
+          ) : activeFolder === 'meetings' ? (
+            <div className="space-y-2 animate-in fade-in duration-150 p-1">
+              <div className="p-3 rounded-2xl bg-teal-50/80 border border-teal-200/80 text-teal-900 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-black text-teal-800">
+                  <BookOpen className="w-4 h-4 text-teal-600" />
+                  <span>Thư mục Sổ họp</span>
+                </div>
+                <p className="text-[11px] font-medium text-slate-600 leading-snug">
+                  Tất cả <span className="font-bold text-teal-700">2 công cụ (Sổ họp cá nhân & Biên bản tổ khối)</span> được hiển thị đầy đủ trên thanh chọn ngang phía trên bên phải.
                 </p>
               </div>
             </div>

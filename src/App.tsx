@@ -30,6 +30,7 @@ import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { ClassroomNavBar } from './components/ClassroomNavBar';
 import { GamesNavBar } from './components/GamesNavBar';
+import { MeetingsNavBar } from './components/MeetingsNavBar';
 import { GuideModal } from './components/GuideModal';
 import { ContactModal } from './components/ContactModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
@@ -55,6 +56,7 @@ import { GamesTab } from './components/tabs/GamesTab';
 import { DragDropTab } from './components/tabs/DragDropTab';
 import { WorksheetsTab } from './components/tabs/WorksheetsTab';
 import { KhdhModule } from './components/KhdhModule';
+import { MeetingsModule } from './components/MeetingsModule';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getSavedSessionUser());
@@ -406,9 +408,11 @@ export default function App() {
     );
   }
 
+  const safeClasses = Array.isArray(state?.classes) ? state.classes : [];
+  const safeStudents = Array.isArray(state?.students) ? state.students : [];
   const activeClass =
-    state.classes.find((c) => c.id === state.activeClassId) || state.classes[0];
-  const activeStudents = state.students.filter((s) => s.classId === state.activeClassId);
+    safeClasses.find((c) => c.id === state?.activeClassId) || safeClasses[0];
+  const activeStudents = safeStudents.filter((s) => s.classId === state?.activeClassId);
 
   // Determine topbar titles
   const getPageInfo = () => {
@@ -518,6 +522,21 @@ export default function App() {
         return {
           title: 'Kế Hoạch Dạy Học (KHDH)',
           subtitle: 'Quản lý kế hoạch dạy học, phân phối chương trình, thời khóa biểu & xuất file Word'
+        };
+      case 'personal_meeting':
+        return {
+          title: 'Sổ Họp Cá Nhân Giáo Viên',
+          subtitle: 'Ghi chép diễn biến, chỉ đạo chuyên môn và phân công nhiệm vụ các cuộc họp'
+        };
+      case 'department_meeting':
+        return {
+          title: 'Biên Bản Họp Tổ Chuyên Môn / Tổ Khối',
+          subtitle: 'Lập biên bản đánh giá chuyên môn tuần/tháng, thông qua quyết nghị tổ khối'
+        };
+      case 'meetings':
+        return {
+          title: 'Thư Mục Sổ Họp & Biên Bản Tổ Khối',
+          subtitle: 'Sổ họp cá nhân và quản lý biên bản họp tổ khối chuyên môn'
         };
       default:
         return {
@@ -649,10 +668,15 @@ export default function App() {
           onForceCloudSync={() => handleForceSync(state)}
         />
 
-        {/* Thanh chọn công cụ Quản lý lớp học hoặc Thư mục Trò chơi ở bên phải */}
+        {/* Thanh chọn công cụ Quản lý lớp học, Trò chơi hoặc Sổ họp ở bên phải */}
         {state.currentPage !== 'khdh' && (
           ['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(state.currentPage) ? (
             <GamesNavBar
+              currentPage={state.currentPage}
+              onNavigate={handleNavigate}
+            />
+          ) : ['personal_meeting', 'department_meeting', 'meetings'].includes(state.currentPage) ? (
+            <MeetingsNavBar
               currentPage={state.currentPage}
               onNavigate={handleNavigate}
             />
@@ -822,6 +846,17 @@ export default function App() {
 
           {state.currentPage === 'khdh' && (
             <KhdhModule currentUser={currentUser} activeClassName={activeClass?.name} />
+          )}
+
+          {(state.currentPage === 'personal_meeting' ||
+            state.currentPage === 'department_meeting' ||
+            state.currentPage === 'meetings') && (
+            <MeetingsModule
+              state={state}
+              onUpdateState={handleUpdateState}
+              currentUser={currentUser}
+              initialTab={state.currentPage === 'department_meeting' ? 'department' : 'personal'}
+            />
           )}
         </main>
       </div>

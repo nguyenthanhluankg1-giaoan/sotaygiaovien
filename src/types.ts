@@ -214,6 +214,57 @@ export interface AppState {
   usedQuizQuestionIds?: string[]; // IDs of questions already asked, to ensure no duplicates
   worksheets?: WorksheetItem[];
   dragDropGames?: DragDropGameItem[];
+  personalMeetings?: PersonalMeetingItem[];
+  departmentMeetings?: DepartmentMeetingItem[];
+  meetingFolders?: MeetingFolder[];
+}
+
+export interface MeetingFolder {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string; // HEX color or tailwind color
+  type: 'personal' | 'department'; // 'personal' for Sổ họp cá nhân, 'department' for BIÊN BẢN TỔ KHỐI
+  createdAt?: string;
+}
+
+export interface PersonalMeetingItem {
+  id: string;
+  title: string;
+  meetingDate: string;
+  location?: string;
+  chairperson?: string;
+  attendees?: string;
+  category: string; // 'Họp Hội đồng' | 'Họp Chuyên môn' | 'Họp Chủ nhiệm' | 'Họp Khối' | 'Khác'
+  folderId?: string; // ID of MeetingFolder
+  content: string;
+  actionItems?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DepartmentMeetingItem {
+  id: string;
+  title: string;
+  department: string; // 'Tổ Khối 1' | 'Tổ Khối 2' | 'Tổ Khối 3' | 'Tổ Khối 4' | 'Tổ Khối 5' | 'Tổ Bộ môn'
+  meetingDate: string;
+  timeStart?: string;
+  timeEnd?: string;
+  location?: string;
+  chairperson: string;
+  secretary: string;
+  totalMembers?: number;
+  presentMembers?: number;
+  absentMembers?: string;
+  purpose?: string;
+  folderId?: string; // ID of MeetingFolder
+  reviewPastWork?: string;
+  upcomingPlan?: string;
+  discussions?: string;
+  resolutions?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DragDropPair {

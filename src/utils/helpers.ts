@@ -122,6 +122,76 @@ export function getAccountExpirationInfo(user?: UserAccount | null): {
   };
 }
 
+export const DEFAULT_MEETING_FOLDERS = [
+  {
+    id: 'mf-hd',
+    name: 'Họp Hội đồng Sư phạm',
+    description: 'Thư mục chứa các cuộc họp Hội đồng định kỳ hàng tháng',
+    color: '#0d9488',
+    type: 'personal' as const,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'mf-cm',
+    name: 'Họp Chuyên môn Tuần',
+    description: 'Thư mục chứa các buổi sinh hoạt chuyên môn tuần',
+    color: '#0284c7',
+    type: 'personal' as const,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'mf-tk3',
+    name: 'Biên bản Họp Tổ Khối 3 - HK1',
+    description: 'Tất cả biên bản họp Tổ chuyên môn Khối 3 Học kỳ 1',
+    color: '#4f46e5',
+    type: 'department' as const,
+    createdAt: new Date().toISOString()
+  }
+];
+
+export const DEFAULT_PERSONAL_MEETINGS = [
+  {
+    id: 'pm-1',
+    title: 'Họp Hội đồng Sư phạm tháng 10/2026',
+    meetingDate: today(),
+    location: 'Hội trường lớn',
+    chairperson: 'Hiệu trưởng - Nguyễn Văn A',
+    attendees: 'Toàn thể Cán bộ - Giáo viên - Nhân viên',
+    category: 'Họp Hội đồng',
+    folderId: 'mf-hd',
+    content: '1. Đánh giá công tác tháng 9: Hoàn thành triển khai KHDH, các lớp ổn định nề nếp.\n2. Phương hướng tháng 10: Đẩy mạnh sinh hoạt chuyên môn, kiểm tra định kỳ học kỳ 1.\n3. Nhắc nhở giáo viên cập nhật sổ báo giảng & điểm danh học sinh hàng ngày.',
+    actionItems: '- Nộp lịch báo giảng trước 17h thứ Sáu.\n- Chuẩn bị hồ sơ thao giảng mừng ngày 20/11.\n- Kiểm tra nề nếp thi đua các lớp.',
+    note: 'Cần chú ý đôn đốc phong trào hoa thi đua.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
+export const DEFAULT_DEPARTMENT_MEETINGS = [
+  {
+    id: 'dm-1',
+    title: 'Biên bản họp Tổ chuyên môn Khối 3 - Đánh giá công tác tuần 8 & Kế hoạch tuần 9',
+    department: 'Tổ Khối 3',
+    meetingDate: today(),
+    timeStart: '14:00',
+    timeEnd: '16:00',
+    location: 'Phòng học 3A1',
+    chairperson: 'Nguyễn Thị B (Tổ trưởng)',
+    secretary: 'Trần Văn C (Thư ký)',
+    totalMembers: 6,
+    presentMembers: 6,
+    absentMembers: 'Không',
+    purpose: 'Đánh giá rút kinh nghiệm giảng dạy tuần 8 và triển khai kế hoạch chuyên môn tuần 9',
+    folderId: 'mf-tk3',
+    reviewPastWork: '1. Việc thực hiện chương trình: 100% giáo viên dạy đúng PPCT.\n2. Ứng dụng công nghệ thông tin: Các giáo viên đã tích cực sử dụng Trò chơi kéo thả & Vòng quay may mắn gây hứng thú cho học sinh.',
+    upcomingPlan: '1. Thực hiện giảng dạy tuần 9 đúng tiến độ.\n2. Thống nhất ma trận đề kiểm tra giữa học kỳ 1 môn Toán & Tiếng Việt Khối 3.\n3. Tổ chức 1 tiết sinh hoạt chuyên môn theo nghiên cứu bài học.',
+    discussions: '- Đ/c B: Đề nghị tăng cường bài tập trắc nghiệm trực quan cho học sinh yếu.\n- Đ/c C: Thống nhất lịch dự giờ chéo giữa các thành viên trong tổ.',
+    resolutions: '100% thành viên nhất trí với đánh giá và kế hoạch công tác tuần 9.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
 export function getDefaultState(): AppState {
   const cls = 'class_default';
 
@@ -172,7 +242,10 @@ export function getDefaultState(): AppState {
     wheelQuizSubject: 'all',
     wheelQuizShuffleOptions: true,
     usedQuizQuestionIds: [],
-    worksheets: []
+    worksheets: [],
+    personalMeetings: [...DEFAULT_PERSONAL_MEETINGS],
+    departmentMeetings: [...DEFAULT_DEPARTMENT_MEETINGS],
+    meetingFolders: [...DEFAULT_MEETING_FOLDERS]
   };
 }
 
@@ -282,7 +355,10 @@ export function getDefaultStateForUser(user?: UserAccount | null): AppState {
     wheelQuizSubject: user.subject || 'all',
     wheelQuizFolderId: 'all',
     wheelQuizShuffleOptions: true,
-    usedQuizQuestionIds: []
+    usedQuizQuestionIds: [],
+    personalMeetings: [...DEFAULT_PERSONAL_MEETINGS],
+    departmentMeetings: [...DEFAULT_DEPARTMENT_MEETINGS],
+    meetingFolders: [...DEFAULT_MEETING_FOLDERS]
   };
 }
 
@@ -315,8 +391,33 @@ export function loadStoredState(user?: UserAccount | null): AppState {
         if (parsed.wheelQuizFolderId === undefined) parsed.wheelQuizFolderId = 'all';
         if (parsed.wheelQuizShuffleOptions === undefined) parsed.wheelQuizShuffleOptions = true;
         if (!Array.isArray(parsed.usedQuizQuestionIds)) parsed.usedQuizQuestionIds = [];
+        if (!Array.isArray(parsed.classes)) parsed.classes = [];
+        if (!Array.isArray(parsed.students)) parsed.students = [];
+        if (!parsed.attendance || typeof parsed.attendance !== 'object') parsed.attendance = {};
+        if (!parsed.seating || typeof parsed.seating !== 'object') parsed.seating = {};
+        if (!parsed.timetable || typeof parsed.timetable !== 'object') {
+          parsed.timetable = { morning: true, afternoon: true, morningCount: 5, afternoonCount: 4, entries: [] };
+        }
+        if (!Array.isArray(parsed.rewards)) parsed.rewards = [];
+        if (!Array.isArray(parsed.redemptions)) parsed.redemptions = [];
+        if (!Array.isArray(parsed.transactions)) parsed.transactions = [];
+        if (!Array.isArray(parsed.wheelHistory)) parsed.wheelHistory = [];
+        if (!Array.isArray(parsed.filmHistory)) parsed.filmHistory = [];
+        if (!Array.isArray(parsed.links)) parsed.links = [];
+        if (!Array.isArray(parsed.dragDropGames)) parsed.dragDropGames = [];
+        if (!Array.isArray(parsed.worksheets)) parsed.worksheets = [];
+        if (!Array.isArray(parsed.subjects)) parsed.subjects = [...DEFAULT_SUBJECTS];
         if (!Array.isArray(parsed.questionFolders)) {
           parsed.questionFolders = [...DEFAULT_QUESTION_FOLDERS];
+        }
+        if (!Array.isArray(parsed.personalMeetings)) {
+          parsed.personalMeetings = [...DEFAULT_PERSONAL_MEETINGS];
+        }
+        if (!Array.isArray(parsed.departmentMeetings)) {
+          parsed.departmentMeetings = [...DEFAULT_DEPARTMENT_MEETINGS];
+        }
+        if (!Array.isArray(parsed.meetingFolders)) {
+          parsed.meetingFolders = [...DEFAULT_MEETING_FOLDERS];
         }
         return parsed;
       }
