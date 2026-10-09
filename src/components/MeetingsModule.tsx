@@ -307,6 +307,7 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
 
   // Personal Meeting Modal state
   const [isPersonalModalOpen, setIsPersonalModalOpen] = useState(false);
+  const [isPersonalFullScreen, setIsPersonalFullScreen] = useState(true);
   const [editingPersonal, setEditingPersonal] = useState<PersonalMeetingItem | null>(null);
 
   // Department Meeting Modal state
@@ -2358,38 +2359,65 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
       {/* MODAL 1: ADD/EDIT PERSONAL MEETING          */}
       {/* ========================================== */}
       {isPersonalModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl border border-teal-200 w-full max-w-2xl max-h-[90vh] flex flex-col my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-4 bg-gradient-to-r from-teal-700 to-teal-600 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5" />
-                <h3 className="font-extrabold text-base">
-                  {editingPersonal ? 'Chỉnh Sửa Sổ Họp Cá Nhân' : 'Thêm Mới Sổ Họp Cá Nhân'}
-                </h3>
+        <div className={`fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center overflow-hidden ${isPersonalFullScreen ? 'p-0 sm:p-2' : 'p-2 sm:p-4'}`}>
+          <div className={`bg-white shadow-2xl border border-teal-200 w-full flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+            isPersonalFullScreen 
+              ? 'h-full sm:h-full sm:rounded-2xl' 
+              : 'max-w-3xl h-[92vh] rounded-3xl my-auto'
+          }`}>
+            <div className="p-3.5 sm:p-4 bg-gradient-to-r from-teal-700 via-teal-600 to-emerald-700 text-white flex items-center justify-between shrink-0 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-2xl bg-white/10 backdrop-blur-xs shrink-0">
+                  <BookOpen className="w-5 h-5 text-teal-100" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-lg leading-tight">
+                    {editingPersonal ? 'Chỉnh Sửa Sổ Họp Cá Nhân' : 'Thêm Mới Sổ Họp Cá Nhân'}
+                  </h3>
+                  <p className="text-[11px] text-teal-100 font-medium hidden sm:block">Khung soạn thảo toàn màn hình rộng rãi, tối ưu việc nhập văn bản ghi chép cá nhân & chỉ đạo cuộc họp</p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsVoiceModalOpen(true)}
-                  className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-extrabold text-[11px] shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
                   title="Chuyển giọng nói cuộc họp thành văn bản chuẩn giáo dục"
                 >
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>🎙️ Ghi âm AI</span>
+                  <Mic className="w-4 h-4" />
+                  <span className="hidden sm:inline">🎙️ Ghi âm AI</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsTemplateModalOpen(true)}
-                  className="px-2.5 py-1 rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 font-extrabold text-[11px] shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
                   title="Chọn mẫu biên bản có sẵn"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>⚡ Mẫu nhanh</span>
+                  <Sparkles className="w-4 h-4" />
+                  <span className="hidden sm:inline">⚡ Mẫu nhanh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPersonalFullScreen(!isPersonalFullScreen)}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all border border-white/20"
+                  title={isPersonalFullScreen ? "Thu nhỏ cửa sổ" : "Phóng to toàn màn hình (Full khung)"}
+                >
+                  {isPersonalFullScreen ? (
+                    <>
+                      <Minimize2 className="w-4 h-4" />
+                      <span className="hidden sm:inline">Thu nhỏ</span>
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="w-4 h-4" />
+                      <span className="hidden sm:inline">Full khung</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsPersonalModalOpen(false)}
-                  className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-xl cursor-pointer"
+                  className="p-1.5 text-white/80 hover:text-white hover:bg-white/20 rounded-xl cursor-pointer transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>

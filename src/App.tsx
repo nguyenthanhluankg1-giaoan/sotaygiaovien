@@ -130,31 +130,59 @@ export default function App() {
         const wsKey = getUserWorkspaceKey(savedUser);
         const cloudState = await loadAppStateFromFirestore(wsKey, savedUser);
         if (cloudState && active) {
-          // Safe reconciliation: do not wipe out existing local classes/students with empty cloud state
-          const localHasClasses = state.classes && state.classes.length > 0;
-          const cloudHasClasses = cloudState.classes && cloudState.classes.length > 0;
+          setState((prev) => {
+            const mergeById = <T extends { id: string; updatedAt?: string }>(cloudArr: T[] = [], localArr: T[] = []): T[] => {
+              const map = new Map<string, T>();
+              for (const item of localArr) {
+                if (item && item.id) map.set(item.id, item);
+              }
+              for (const item of cloudArr) {
+                if (item && item.id) {
+                  const existing = map.get(item.id);
+                  if (!existing) {
+                    map.set(item.id, item);
+                  } else {
+                    if (item.updatedAt && existing.updatedAt && new Date(item.updatedAt) > new Date(existing.updatedAt)) {
+                      map.set(item.id, item);
+                    } else if (JSON.stringify(item).length > JSON.stringify(existing).length) {
+                      map.set(item.id, item);
+                    }
+                  }
+                }
+              }
+              return Array.from(map.values());
+            };
 
-          if (localHasClasses && !cloudHasClasses) {
-            console.log('Preserving local classes and syncing to Cloud Firestore...');
-            saveAppStateToFirestore(wsKey, state, {
+            const mergedPersonalMeetings = mergeById(cloudState.personalMeetings || [], prev.personalMeetings || []);
+            const mergedDepartmentMeetings = mergeById(cloudState.departmentMeetings || [], prev.departmentMeetings || []);
+            const mergedMeetingFolders = mergeById(cloudState.meetingFolders || [], prev.meetingFolders || []);
+            const mergedDragDropGames = mergeById(cloudState.dragDropGames || [], prev.dragDropGames || []);
+            const mergedWorksheets = mergeById(cloudState.worksheets || [], prev.worksheets || []);
+
+            const mergedClasses = (cloudState.classes && cloudState.classes.length > 0) ? cloudState.classes : (prev.classes || []);
+            const mergedStudents = (cloudState.students && cloudState.students.length > 0) ? cloudState.students : (prev.students || []);
+
+            const reconciledState: AppState = {
+              ...prev,
+              ...cloudState,
+              classes: mergedClasses,
+              students: mergedStudents,
+              personalMeetings: mergedPersonalMeetings.length > 0 ? mergedPersonalMeetings : (prev.personalMeetings || []),
+              departmentMeetings: mergedDepartmentMeetings.length > 0 ? mergedDepartmentMeetings : (prev.departmentMeetings || []),
+              meetingFolders: mergedMeetingFolders.length > 0 ? mergedMeetingFolders : (prev.meetingFolders || []),
+              dragDropGames: mergedDragDropGames,
+              worksheets: mergedWorksheets
+            };
+
+            saveStoredState(savedUser, reconciledState);
+            saveAppStateToFirestore(wsKey, reconciledState, {
               userId: savedUser?.id || 'guest',
               teacherName: savedUser?.name || 'Giáo viên',
               role: savedUser?.role || 'guest'
             }).catch(console.warn);
-          } else {
-            // Merge custom dragDropGames so created games on both devices are preserved
-            const mergedGames = [
-              ...(cloudState.dragDropGames || []),
-              ...(state.dragDropGames || []).filter(
-                (lg) => !(cloudState.dragDropGames || []).some((cg) => cg.id === lg.id)
-              )
-            ];
-            setState({
-              ...cloudState,
-              dragDropGames: mergedGames.length > 0 ? mergedGames : cloudState.dragDropGames
-            });
-            saveStoredState(savedUser, cloudState);
-          }
+
+            return reconciledState;
+          });
         }
         cloudLoadedUserRef.current = savedUser ? savedUser.id : 'guest';
       } catch (err) {
