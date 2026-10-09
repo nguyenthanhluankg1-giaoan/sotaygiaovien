@@ -67,8 +67,13 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
     return DEFAULT_DRAG_DROP_GAMES;
   }, [state.dragDropGames]);
 
-  // Main View Mode: 'play' | 'manage'
+  // Main View Mode: 'play' | 'manage' (Default to 'manage' - Tạo & Quản lý)
   const [activeTab, setActiveTab] = useState<'play' | 'manage'>('manage');
+
+  // Always reset to 'manage' (Tạo & Quản lý) mode when entering this tab
+  useEffect(() => {
+    setActiveTab('manage');
+  }, []);
 
   // Filter for selecting games
   const [filterSubject, setFilterSubject] = useState<string>('all');
