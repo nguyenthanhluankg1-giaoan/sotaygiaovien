@@ -3,39 +3,55 @@ import { HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 let landmarkerInstance: HandLandmarker | null = null;
 let isInitializing = false;
 
+async function resolveVisionTasks() {
+  const cdnUrls = [
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
+    'https://unpkg.com/@mediapipe/tasks-vision@0.10.14/wasm',
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+  ];
+
+  for (const url of cdnUrls) {
+    try {
+      const vision = await FilesetResolver.forVisionTasks(url);
+      if (vision) return vision;
+    } catch (err) {
+      console.warn(`FilesetResolver failed for ${url}, trying next CDN...`, err);
+    }
+  }
+  throw new Error('Không thể tải thư viện nhận diện cử chỉ MediaPipe Vision Tasks từ CDN.');
+}
+
 export async function initHandLandmarker(): Promise<HandLandmarker | null> {
   if (landmarkerInstance) return landmarkerInstance;
   if (isInitializing) {
     // Wait for ongoing initialization
-    while (isInitializing) {
+    let waitCount = 0;
+    while (isInitializing && waitCount < 30) {
       await new Promise((r) => setTimeout(r, 100));
+      waitCount++;
       if (landmarkerInstance) return landmarkerInstance;
     }
   }
 
   try {
     isInitializing = true;
-    const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-    );
+    const vision = await resolveVisionTasks();
 
-    landmarkerInstance = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-        delegate: 'GPU'
-      },
-      runningMode: 'VIDEO',
-      numHands: 1
-    });
-
-    isInitializing = false;
-    return landmarkerInstance;
-  } catch (err) {
-    console.warn('Failed GPU HandLandmarker, trying CPU fallback...', err);
+    // 1. Try GPU delegate
     try {
-      const vision = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-      );
+      landmarkerInstance = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+          delegate: 'GPU'
+        },
+        runningMode: 'VIDEO',
+        numHands: 1
+      });
+      isInitializing = false;
+      return landmarkerInstance;
+    } catch (gpuErr) {
+      console.warn('GPU HandLandmarker failed, trying CPU fallback...', gpuErr);
+      // 2. Fallback to CPU delegate
       landmarkerInstance = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
@@ -46,11 +62,11 @@ export async function initHandLandmarker(): Promise<HandLandmarker | null> {
       });
       isInitializing = false;
       return landmarkerInstance;
-    } catch (cpuErr) {
-      isInitializing = false;
-      console.error('HandLandmarker init error:', cpuErr);
-      return null;
     }
+  } catch (err) {
+    isInitializing = false;
+    console.error('HandLandmarker init error:', err);
+    return null;
   }
 }
 
@@ -79,50 +95,62 @@ export function computePinchState(
   }
 
   const wrist = landmarks[0];
+  const indexMcp = landmarks[5];
   const middleMcp = landmarks[9];
+  const pinkyMcp = landmarks[17];
+
   const thumbTip = landmarks[4];
   const indexTip = landmarks[8];
   const middleTip = landmarks[12];
   const ringTip = landmarks[16];
   const pinkyTip = landmarks[20];
 
-  // Palm center anchor (landmark 0 + 9 average) stays extremely stable when making a fist
-  const palmX = (wrist.x + middleMcp.x) / 2;
-  const palmY = (wrist.y + middleMcp.y) / 2;
+  // Palm center anchor (average of Wrist + MCP joints)
+  const palmX = (wrist.x + indexMcp.x + middleMcp.x + pinkyMcp.x) / 4;
+  const palmY = (wrist.y + indexMcp.y + middleMcp.y + pinkyMcp.y) / 4;
+  const palmZ = ((wrist.z || 0) + (indexMcp.z || 0) + (middleMcp.z || 0) + (pinkyMcp.z || 0)) / 4;
 
   // Mirrored X for natural camera mirror
   const handX = Math.max(0, Math.min(1, 1 - palmX));
   const handY = Math.max(0, Math.min(1, palmY));
 
-  // Hand scale (wrist to middle MCP distance)
-  const handScale = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 0.15;
+  // Palm width reference distance (Index MCP 5 to Pinky MCP 17) - invariant to finger posture
+  const palmWidth = Math.hypot(
+    indexMcp.x - pinkyMcp.x,
+    indexMcp.y - pinkyMcp.y,
+    (indexMcp.z || 0) - (pinkyMcp.z || 0)
+  ) || 0.12;
 
-  // Calculate finger extensions relative to hand scale
-  const dIndex = Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y);
-  const dMiddle = Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y);
-  const dRing = Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y);
-  const dPinky = Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y);
+  // Distances from fingertips to palm center
+  const dIndexPalm = Math.hypot(indexTip.x - palmX, indexTip.y - palmY, (indexTip.z || 0) - palmZ);
+  const dMiddlePalm = Math.hypot(middleTip.x - palmX, middleTip.y - palmY, (middleTip.z || 0) - palmZ);
+  const dRingPalm = Math.hypot(ringTip.x - palmX, ringTip.y - palmY, (ringTip.z || 0) - palmZ);
+  const dPinkyPalm = Math.hypot(pinkyTip.x - palmX, pinkyTip.y - palmY, (pinkyTip.z || 0) - palmZ);
 
-  // Normalized average finger extension (Open hand ~1.8 - 2.5, Closed fist ~0.9 - 1.35)
-  const avgFingerExtension = (dIndex + dMiddle + dRing + dPinky) / 4 / handScale;
+  // Ratio of average fingertip distance relative to palm width
+  const avgTipRatio = (dIndexPalm + dMiddlePalm + dRingPalm + dPinkyPalm) / 4 / palmWidth;
 
-  // 2-finger pinch distance relative to hand scale
-  const dPinchRaw = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-  const pinchDistance = dPinchRaw / handScale;
+  // Pinch distance (Thumb tip to Index tip or Middle tip) relative to palm width
+  const dPinchThumbIndex = Math.hypot(
+    thumbTip.x - indexTip.x,
+    thumbTip.y - indexTip.y,
+    (thumbTip.z || 0) - (indexTip.z || 0)
+  );
+  const pinchDistance = dPinchThumbIndex / palmWidth;
 
-  // Fist closed state
-  const isFistClosed = avgFingerExtension < 1.42;
+  // Fist closed check (avgTipRatio < 1.35)
+  const isFistClosed = avgTipRatio < 1.35;
 
-  // Hysteresis thresholding for grab gesture (combines Full Fist Grab & Pinch):
-  // - To START grab: require full fist close (avgExtension < 1.42) OR pinch (pinchDistance < 0.45)
-  // - To RELEASE grab: require opening hand wide (avgExtension > 1.65 AND pinchDistance > 0.55)
+  // Hysteresis for grab/release gesture:
+  // - To START grab (Nắm tay): Fist closed (avgTipRatio < 1.35) OR 2-finger Pinch (pinchDistance < 0.55)
+  // - To RELEASE grab (Xòe tay): Open hand (avgTipRatio > 1.60 AND pinchDistance > 0.65)
   let isPinching = currentIsPinching;
   if (!currentIsPinching) {
-    if (avgFingerExtension < 1.42 || pinchDistance < 0.45) {
+    if (avgTipRatio < 1.35 || pinchDistance < 0.55) {
       isPinching = true;
     }
   } else {
-    if (avgFingerExtension > 1.65 && pinchDistance > 0.55) {
+    if (avgTipRatio > 1.60 && pinchDistance > 0.65) {
       isPinching = false;
     }
   }

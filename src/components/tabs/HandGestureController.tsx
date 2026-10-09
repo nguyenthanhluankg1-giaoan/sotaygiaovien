@@ -145,17 +145,25 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
         setInitStatus('loading');
         setErrorMessage('');
 
-        // 1. Request Camera MediaStream
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-          audio: false
-        });
+        // 1. Request Camera MediaStream with fallback constraints
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+            audio: false
+          });
+        } catch (firstErr) {
+          console.warn('Ideal camera constraints failed, attempting basic stream...', firstErr);
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        }
 
         if (!isSubscribed) return;
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          await videoRef.current.play().catch(console.warn);
         }
 
         // 2. Initialize MediaPipe HandLandmarker
@@ -169,6 +177,7 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
 
         // 3. Process video frames in animation loop
         let lastVideoTime = -1;
+        let lastTimestamp = -1;
 
         const processFrame = () => {
           if (!isSubscribed) return;
@@ -179,7 +188,13 @@ export const HandGestureController: React.FC<HandGestureControllerProps> = ({
               lastVideoTime = video.currentTime;
 
               try {
-                const results = landmarker.detectForVideo(video, performance.now());
+                let nowMs = performance.now();
+                if (nowMs <= lastTimestamp) {
+                  nowMs = lastTimestamp + 1;
+                }
+                lastTimestamp = nowMs;
+
+                const results = landmarker.detectForVideo(video, nowMs);
                 const hasLandmarks = results && results.landmarks && results.landmarks.length > 0;
 
                 if (hasLandmarks) {

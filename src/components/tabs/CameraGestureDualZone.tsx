@@ -137,33 +137,41 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     blueHoldStartRef.current = null;
   }, [currentBlueQuestionIdx, isQuestionStarted]);
 
-  // Count extended fingers from 21 landmarks
+  const lastTimestampRef = useRef<number>(-1);
+
+  // Count extended fingers from 21 landmarks (angle & distance invariant)
   const countFingers = (landmarks: Array<{ x: number; y: number; z: number }>): number => {
     if (!landmarks || landmarks.length < 21) return 0;
 
+    const wrist = landmarks[0];
     let count = 0;
 
-    // Index finger: Tip(8) is higher (smaller y) than PIP(6)
-    const indexUp = landmarks[8].y < landmarks[6].y;
-    if (indexUp) count++;
+    // Helper to check if a finger is extended away from wrist relative to PIP and MCP
+    const isExtended = (tipIdx: number, pipIdx: number, mcpIdx: number) => {
+      const dTip = Math.hypot(landmarks[tipIdx].x - wrist.x, landmarks[tipIdx].y - wrist.y);
+      const dPip = Math.hypot(landmarks[pipIdx].x - wrist.x, landmarks[pipIdx].y - wrist.y);
+      const dMcp = Math.hypot(landmarks[mcpIdx].x - wrist.x, landmarks[mcpIdx].y - wrist.y);
+      // Either tip is higher than PIP (y smaller) or distance from wrist is greater than PIP and MCP
+      return landmarks[tipIdx].y < landmarks[pipIdx].y || (dTip > dPip && dTip > dMcp * 1.12);
+    };
 
-    // Middle finger: Tip(12) is higher than PIP(10)
-    const middleUp = landmarks[12].y < landmarks[10].y;
-    if (middleUp) count++;
+    // Index finger (Tip 8, PIP 6, MCP 5)
+    if (isExtended(8, 6, 5)) count++;
 
-    // Ring finger: Tip(16) is higher than PIP(14)
-    const ringUp = landmarks[16].y < landmarks[14].y;
-    if (ringUp) count++;
+    // Middle finger (Tip 12, PIP 10, MCP 9)
+    if (isExtended(12, 10, 9)) count++;
 
-    // Pinky finger: Tip(20) is higher than PIP(18)
-    const pinkyUp = landmarks[20].y < landmarks[18].y;
-    if (pinkyUp) count++;
+    // Ring finger (Tip 16, PIP 14, MCP 13)
+    if (isExtended(16, 14, 13)) count++;
 
-    // Thumb check: Thumb tip (4) vs IP joint (3) and MCP (2)
+    // Pinky finger (Tip 20, PIP 18, MCP 17)
+    if (isExtended(20, 18, 17)) count++;
+
+    // Thumb check: Thumb tip (4) vs IP joint (3) and Pinky MCP (17)
     const thumbDistToPinky = Math.hypot(landmarks[4].x - landmarks[17].x, landmarks[4].y - landmarks[17].y);
     const thumbIpToPinky = Math.hypot(landmarks[3].x - landmarks[17].x, landmarks[3].y - landmarks[17].y);
     const thumbExtended = thumbDistToPinky > thumbIpToPinky * 1.15;
-    
+
     if (thumbExtended && (count >= 1 || landmarks[4].y < landmarks[2].y)) {
       count++;
     }
@@ -336,9 +344,13 @@ export const CameraGestureDualZone: React.FC<CameraGestureDualZoneProps> = ({
     const width = canvas.width;
     const height = canvas.height;
 
-    // Detect Hands
-    const startTimeMs = performance.now();
-    const detections = handLandmarkerRef.current.detectForVideo(video, startTimeMs);
+    // Detect Hands with strictly increasing timestamp
+    let nowMs = performance.now();
+    if (nowMs <= lastTimestampRef.current) {
+      nowMs = lastTimestampRef.current + 1;
+    }
+    lastTimestampRef.current = nowMs;
+    const detections = handLandmarkerRef.current.detectForVideo(video, nowMs);
 
     // Clear Canvas
     ctx.clearRect(0, 0, width, height);
