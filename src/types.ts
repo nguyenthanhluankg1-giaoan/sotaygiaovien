@@ -248,6 +248,7 @@ export interface PersonalMeetingItem {
 export interface DepartmentMeetingItem {
   id: string;
   title: string;
+  schoolName?: string;
   department: string; // 'Tổ Khối 1' | 'Tổ Khối 2' | 'Tổ Khối 3' | 'Tổ Khối 4' | 'Tổ Khối 5' | 'Tổ Bộ môn'
   meetingDate: string;
   timeStart?: string;
@@ -258,12 +259,50 @@ export interface DepartmentMeetingItem {
   totalMembers?: number;
   presentMembers?: number;
   absentMembers?: string;
-  purpose?: string;
   folderId?: string; // ID of MeetingFolder
+
+  // II. NỘI DUNG SINH HOẠT TỔ KHỐI
+  pastWorkPros?: string; // 1a. Ưu điểm
+  pastWorkCons?: string; // 1b. Hạn chế
+  upcomingTasks?: string; // 2. Triển khai nhiệm vụ chuyên môn thời gian tới
+  documentsDeployment?: string; // 3. Triển khai văn bản
+  memberFeedback?: string; // 4. Ý kiến đóng góp
+  section2Conclusion?: string; // 5. Kết luận
+
+  // III. SINH HOẠT CHUYÊN MÔN THEO HƯỚNG NGHIÊN CỨU BÀI HỌC
+  // 1. Lựa chọn bài học nghiên cứu
+  lessonSubject?: string; // Môn học
+  lessonClass?: string; // Lớp
+  lessonName?: string; // Tên bài học
+  lessonTeacher?: string; // Giáo viên chuẩn bị và dạy minh họa
+  lessonExpectedTime?: string; // Thời gian dự kiến thực hiện
+  lessonReason?: string; // Lý do lựa chọn bài học
+
+  // 2. Thảo luận, xây dựng kế hoạch bài dạy
+  lessonPlanDiscussion?: string; // Ý kiến đóng góp của các thành viên
+  lessonPlanAgreedContent?: string; // Nội dung thống nhất sau thảo luận
+
+  // 3. Tổ chức dạy minh họa, dự giờ và quan sát học sinh
+  obsGoodActivities?: string; // - Hoạt động học tập học sinh thực hiện tốt
+  obsDifficulties?: string; // - Những khó khăn, vướng mắc của học sinh
+  obsSupportNeeded?: string; // - Học sinh cần được hỗ trợ thêm
+  obsEmergingSituations?: string; // - Tình huống phát sinh trong tiết dạy
+
+  // 4. Phân tích, thảo luận sau tiết dạy minh họa
+  postLessonDiscussion?: string; // Ý kiến thảo luận
+  postLessonConclusion?: string; // Kết luận sau nghiên cứu bài học
+
+  // IV. KẾT LUẬN CHUNG VÀ PHÂN CÔNG THỰC HIỆN
+  generalConclusionPoints?: string; // 1, 2, 3, 4
+  assignmentsList?: string; // 5. Phân công nhiệm vụ cụ thể
+
+  // Fallback / legacy fields
   reviewPastWork?: string;
   upcomingPlan?: string;
   discussions?: string;
   resolutions?: string;
+  purpose?: string;
+
   createdAt: string;
   updatedAt: string;
 }

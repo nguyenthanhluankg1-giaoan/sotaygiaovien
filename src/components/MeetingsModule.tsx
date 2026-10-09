@@ -34,7 +34,15 @@ import {
   CornerUpLeft,
   Move,
   HardDrive,
-  FolderTree
+  FolderTree,
+  Maximize2,
+  Minimize2,
+  Mic,
+  MicOff,
+  Wand2,
+  Volume2,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { AppState, PersonalMeetingItem, DepartmentMeetingItem, MeetingFolder, UserAccount } from '../types';
 import { uid, today, nowTime } from '../utils/helpers';
@@ -76,6 +84,48 @@ export interface MeetingTemplate {
 }
 
 const QUICK_TEMPLATES: MeetingTemplate[] = [
+  {
+    id: 'tmpl-dept-shcm-ncbh',
+    type: 'department',
+    title: 'Biên bản Sinh hoạt Tổ khối (kết hợp Nghiên cứu Bài học)',
+    categoryOrDept: 'Tổ Khối',
+    description: 'Đánh giá chuyên môn -> Sinh hoạt NCBH -> Dạy minh họa & dự giờ -> Phân tích sau dạy -> Kết luận & Phân công.',
+    data: {
+      title: 'BIÊN BẢN SINH HOẠT TỔ KHỐI (KẾT HỢP NGHIÊN CỨU BÀI HỌC)',
+      department: 'Tổ Khối 1',
+      purpose: 'Đánh giá công tác chuyên môn tổ khối và thực hiện Sinh hoạt chuyên môn theo hướng nghiên cứu bài học.',
+      reviewPastWork: `1. Đánh giá công tác chuyên môn trong thời gian qua:
+
+
+2. Triển khai nhiệm vụ chuyên môn thời gian tới:
+
+
+3. Triển khai văn bản:
+
+
+4. Ý kiến đóng góp & Kết luận:
+`,
+      upcomingPlan: `1. Lựa chọn bài học nghiên cứu:
+- Môn học: 
+- Lớp: Khối ... (Lớp ......)
+- Tên bài học: Bài ......
+- Giáo viên chuẩn bị và dạy minh họa: Đồng chí .........
+- Thời gian dự kiến thực hiện: Tiết ......, ngày ...... tháng ...... năm ......
+- Lý do lựa chọn bài học: Bài học có nội dung trọng tâm đổi mới phương pháp dạy học, rèn năng lực tự chủ và hợp tác cho học sinh.
+
+2. Thảo luận, xây dựng kế hoạch bài dạy:
+
+
+3. Tổ chức dạy minh họa, dự giờ và quan sát học sinh:
+
+
+
+4. Phân tích, thảo luận sau tiết dạy minh họa:
+`,
+      discussions: ``,
+      resolutions: ``
+    }
+  },
   {
     id: 'tmpl-dept-1',
     type: 'department',
@@ -261,6 +311,7 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
 
   // Department Meeting Modal state
   const [isDepartmentModalOpen, setIsDepartmentModalOpen] = useState(false);
+  const [isDepartmentFullScreen, setIsDepartmentFullScreen] = useState(true);
   const [editingDepartment, setEditingDepartment] = useState<DepartmentMeetingItem | null>(null);
 
   // Detail View Modal
@@ -273,6 +324,332 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
   // AI Summary State
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [aiSummaryResult, setAiSummaryResult] = useState<string | null>(null);
+
+  // Controlled Form States for Direct Speech-to-Text Inline Editing
+  const [personalFormContent, setPersonalFormContent] = useState('');
+  const [deptFormReviewPastWork, setDeptFormReviewPastWork] = useState('');
+  const [deptFormUpcomingPlan, setDeptFormUpcomingPlan] = useState('');
+  const [deptFormDiscussions, setDeptFormDiscussions] = useState('');
+  const [deptFormResolutions, setDeptFormResolutions] = useState('');
+
+  // Sync controlled state when personal modal opens or editingPersonal changes
+  React.useEffect(() => {
+    if (isPersonalModalOpen) {
+      setPersonalFormContent(editingPersonal?.content || '');
+    }
+  }, [isPersonalModalOpen, editingPersonal]);
+
+  // Sync controlled state when department modal opens or editingDepartment changes
+  React.useEffect(() => {
+    if (isDepartmentModalOpen) {
+      setDeptFormReviewPastWork(editingDepartment?.reviewPastWork || '');
+      setDeptFormUpcomingPlan(editingDepartment?.upcomingPlan || '');
+      setDeptFormDiscussions(editingDepartment?.discussions || '');
+      setDeptFormResolutions(editingDepartment?.resolutions || '');
+    }
+  }, [isDepartmentModalOpen, editingDepartment]);
+
+  // Direct Inline Voice Recording State (Records directly into form fields without opening modals)
+  const [inlineRecordingField, setInlineRecordingField] = useState<string | null>(null);
+  const [isInlineListening, setIsInlineListening] = useState(false);
+  const inlineRecognitionRef = React.useRef<any>(null);
+
+  const toggleInlineListening = (
+    fieldKey: string,
+    currentValue: string,
+    setValueCallback: (val: string) => void
+  ) => {
+    if (isInlineListening && inlineRecordingField === fieldKey) {
+      // Stop recording
+      if (inlineRecognitionRef.current) {
+        try {
+          inlineRecognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      setIsInlineListening(false);
+      setInlineRecordingField(null);
+    } else {
+      // Stop existing recording
+      if (inlineRecognitionRef.current) {
+        try {
+          inlineRecognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        alert(
+          'Trình duyệt của bạn chưa hỗ trợ nhận diện giọng nói trực tiếp. Thầy/Cô có thể nhập hoặc dán nội dung cuộc họp.'
+        );
+        return;
+      }
+
+      try {
+        const rec = new SpeechRecognition();
+        rec.lang = 'vi-VN';
+        rec.continuous = true;
+        rec.interimResults = true;
+
+        const baseText = currentValue ? currentValue.trim() + ' ' : '';
+
+        rec.onstart = () => {
+          setIsInlineListening(true);
+          setInlineRecordingField(fieldKey);
+        };
+
+        rec.onresult = (event: any) => {
+          let currentTranscript = '';
+          for (let i = 0; i < event.results.length; i++) {
+            currentTranscript += event.results[i][0].transcript + ' ';
+          }
+          setValueCallback((baseText + currentTranscript).trim());
+        };
+
+        rec.onerror = (err: any) => {
+          console.warn('Inline speech error:', err);
+          setIsInlineListening(false);
+          setInlineRecordingField(null);
+        };
+
+        rec.onend = () => {
+          setIsInlineListening(false);
+          setInlineRecordingField(null);
+        };
+
+        inlineRecognitionRef.current = rec;
+        rec.start();
+      } catch (e) {
+        console.error('Error starting inline speech recognition:', e);
+        setIsInlineListening(false);
+        setInlineRecordingField(null);
+      }
+    }
+  };
+
+  const handleInlineRefineAI = async (
+    textToRefine: string,
+    setValueCallback: (val: string) => void
+  ) => {
+    if (!textToRefine || !textToRefine.trim()) {
+      alert('Chưa có nội dung văn bản trong ô để tinh lọc AI.');
+      return;
+    }
+
+    setIsRefiningVoice(true);
+    try {
+      const res = await fetch('/api/ai/meeting-speech-refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawTranscript: textToRefine,
+          meetingType: activeTab
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        const refinedText =
+          data.data.reviewPastWork ||
+          data.data.content ||
+          [
+            data.data.reviewPastWork,
+            data.data.upcomingPlan,
+            data.data.discussions,
+            data.data.resolutions
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+
+        setValueCallback(refinedText);
+      } else {
+        alert(data.error || 'Có lỗi khi tinh lọc văn bản.');
+      }
+    } catch (err) {
+      console.error('Inline refine error:', err);
+      alert('Không thể kết nối dịch vụ AI.');
+    } finally {
+      setIsRefiningVoice(false);
+    }
+  };
+
+  // Voice Recognition & AI Meeting Speech Refine State
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [isRefiningVoice, setIsRefiningVoice] = useState(false);
+  const [refinedVoiceResult, setRefinedVoiceResult] = useState<{
+    title?: string;
+    reviewPastWork?: string;
+    upcomingPlan?: string;
+    discussions?: string;
+    resolutions?: string;
+    actionItems?: string;
+  } | null>(null);
+  const recognitionRef = React.useRef<any>(null);
+
+  // Toggle Speech Recognition via Web Speech API
+  const toggleListening = () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      setIsListening(false);
+    } else {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        alert(
+          'Trình duyệt của bạn chưa hỗ trợ nhận diện giọng nói trực tiếp. Thầy/Cô có thể nhập hoặc dán nội dung lời nói cuộc họp vào ô bên dưới để AI tự động tinh lọc chuẩn giáo dục.'
+        );
+        return;
+      }
+
+      try {
+        const rec = new SpeechRecognition();
+        rec.lang = 'vi-VN';
+        rec.continuous = true;
+        rec.interimResults = true;
+
+        rec.onstart = () => {
+          setIsListening(true);
+        };
+
+        rec.onresult = (event: any) => {
+          let currentResult = '';
+          for (let i = 0; i < event.results.length; i++) {
+            currentResult += event.results[i][0].transcript + ' ';
+          }
+          setVoiceTranscript(currentResult.trim());
+        };
+
+        rec.onerror = (err: any) => {
+          console.warn('Speech recognition error:', err);
+          setIsListening(false);
+        };
+
+        rec.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = rec;
+        rec.start();
+      } catch (e) {
+        console.error('Error starting speech recognition:', e);
+        setIsListening(false);
+      }
+    }
+  };
+
+  // Clean up speech recognition on unmount
+  React.useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  // Refine speech transcript using Gemini AI
+  const handleRefineVoiceWithAI = async () => {
+    if (!voiceTranscript || !voiceTranscript.trim()) {
+      alert('Vui lòng bật ghi âm hoặc dán/nhập nội dung lời nói cuộc họp trước khi tinh lọc AI.');
+      return;
+    }
+
+    setIsRefiningVoice(true);
+    setRefinedVoiceResult(null);
+
+    try {
+      const res = await fetch('/api/ai/meeting-speech-refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawTranscript: voiceTranscript,
+          meetingType: activeTab
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        setRefinedVoiceResult(data.data);
+      } else {
+        alert(data.error || 'Có lỗi xảy ra khi xử lý nội dung giọng nói bằng AI.');
+      }
+    } catch (err: any) {
+      console.error('Refine voice error:', err);
+      alert('Không thể kết nối với hệ thống AI tinh lọc giọng nói.');
+    } finally {
+      setIsRefiningVoice(false);
+    }
+  };
+
+  // Apply refined voice result to department meeting modal
+  const handleApplyToDepartmentModal = () => {
+    if (!refinedVoiceResult) return;
+    setEditingDepartment({
+      id: '',
+      title: refinedVoiceResult.title || 'Biên bản Họp Tổ chuyên môn từ Giọng nói AI',
+      department: 'Tổ Khối 1',
+      meetingDate: today(),
+      timeStart: '14:00',
+      timeEnd: '16:00',
+      chairperson: currentUser?.name || 'Tổ trưởng',
+      secretary: 'Thư ký cuộc họp',
+      totalMembers: 6,
+      presentMembers: 6,
+      absentMembers: 'Không',
+      purpose: 'Nội dung triển khai chuyên môn được ghi nhận và tinh lọc tự động từ giọng nói AI',
+      reviewPastWork: refinedVoiceResult.reviewPastWork || '',
+      upcomingPlan: refinedVoiceResult.upcomingPlan || '',
+      discussions: refinedVoiceResult.discussions || '',
+      resolutions: refinedVoiceResult.resolutions || '',
+      folderId: selectedFolderId !== 'all' && selectedFolderId !== 'uncategorized' ? selectedFolderId : 'uncategorized'
+    });
+    setIsVoiceModalOpen(false);
+    setIsDepartmentModalOpen(true);
+  };
+
+  // Apply refined voice result to personal meeting modal
+  const handleApplyToPersonalModal = () => {
+    if (!refinedVoiceResult) return;
+    const combinedContent = [
+      `I. NỘI DUNG SINH HOẠT:\n${refinedVoiceResult.reviewPastWork || ''}`,
+      `II. SINH HOẠT CHUYÊN MÔN / KẾ HOẠCH:\n${refinedVoiceResult.upcomingPlan || ''}`,
+      `III. KẾT LUẬN CHUNG VÀ PHÂN CÔNG THỰC HIỆN:\n${refinedVoiceResult.discussions || ''}`,
+      `IV. NGHỊ QUYẾT & KẾT THÚC:\n${refinedVoiceResult.resolutions || ''}`
+    ].join('\n\n');
+
+    setEditingPersonal({
+      id: '',
+      title: refinedVoiceResult.title || 'Sổ ghi chép cuộc họp từ Giọng nói AI',
+      category: 'Họp Chuyên môn',
+      meetingDate: today(),
+      location: 'Phòng họp',
+      chairperson: 'Chủ trì cuộc họp',
+      attendees: 'Toàn thể giáo viên trong tổ',
+      content: combinedContent,
+      actionItems: refinedVoiceResult.actionItems || '',
+      note: 'Ghi chép tự động từ lời nói cuộc họp (Đã tinh lọc chuẩn đạo đức & sư phạm bởi Gemini AI)',
+      folderId: selectedFolderId !== 'all' && selectedFolderId !== 'uncategorized' ? selectedFolderId : 'uncategorized'
+    });
+    setIsVoiceModalOpen(false);
+    setIsPersonalModalOpen(true);
+  };
 
   // Quick Templates state
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
@@ -1064,12 +1441,22 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
 
           <button
             type="button"
+            onClick={() => setIsVoiceModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 hover:from-rose-700 hover:to-purple-700 text-white font-extrabold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
+            title="Chuyển giọng nói cuộc họp thành văn bản chuẩn mực đạo đức & sư phạm bởi Gemini AI"
+          >
+            <Mic className="w-3.5 h-3.5 text-rose-200 animate-pulse" />
+            <span>🎙️ Giọng nói → Văn bản AI</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsTemplateModalOpen(true)}
             className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
             title="Tải mẫu biên bản nhanh chuẩn cấu trúc ngành giáo dục"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-pulse" />
-            <span>⚡ Mẫu Biên Bản Nhanh</span>
+            <span>⚡ Mẫu Nhanh</span>
           </button>
 
           {activeTab === 'personal' ? (
@@ -1983,6 +2370,15 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setIsVoiceModalOpen(true)}
+                  className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-extrabold text-[11px] shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  title="Chuyển giọng nói cuộc họp thành văn bản chuẩn giáo dục"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>🎙️ Ghi âm AI</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setIsTemplateModalOpen(true)}
                   className="px-2.5 py-1 rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 font-extrabold text-[11px] shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
                   title="Chọn mẫu biên bản có sẵn"
@@ -2095,15 +2491,61 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Nội dung cuộc họp (*)</label>
+              <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                  <label className="text-xs font-black text-slate-800">Nội dung cuộc họp (*)</label>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        toggleInlineListening(
+                          'personal_content',
+                          personalFormContent,
+                          setPersonalFormContent
+                        )
+                      }
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                        isInlineListening && inlineRecordingField === 'personal_content'
+                          ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
+                          : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                      }`}
+                      title="Bấm để bắt đầu/dừng ghi âm giọng nói trực tiếp vào ô này"
+                    >
+                      {isInlineListening && inlineRecordingField === 'personal_content' ? (
+                        <>
+                          <MicOff className="w-3.5 h-3.5 text-rose-200 animate-spin" />
+                          <span>⏹️ Dừng ghi âm</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3.5 h-3.5 text-rose-600" />
+                          <span>🎙️ Ghi âm trực tiếp</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleInlineRefineAI(personalFormContent, setPersonalFormContent)
+                      }
+                      disabled={isRefiningVoice || !personalFormContent.trim()}
+                      className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                      title="Tinh lọc chữ trong ô này thành văn phong sư phạm chuẩn giáo dục"
+                    >
+                      <Wand2 className="w-3.5 h-3.5 text-purple-600" />
+                      <span>✨ Tinh lọc AI</span>
+                    </button>
+                  </div>
+                </div>
                 <textarea
                   name="content"
                   rows={5}
-                  defaultValue={editingPersonal?.content || ''}
+                  value={personalFormContent}
+                  onChange={(e) => setPersonalFormContent(e.target.value)}
                   required
-                  placeholder="Ghi chép diễn biến, nội dung chỉ đạo, triển khai nhiệm vụ..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-teal-500"
+                  placeholder="Ghi chép diễn biến, nội dung chỉ đạo, triển khai nhiệm vụ... (Có thể bấm '🎙️ Ghi âm trực tiếp' để nói trực tiếp vào ô này)"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-teal-500"
                 />
               </div>
 
@@ -2153,241 +2595,487 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
       {/* MODAL 2: ADD/EDIT DEPARTMENT MEETING        */}
       {/* ========================================== */}
       {isDepartmentModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl border border-indigo-200 w-full max-w-3xl max-h-[90vh] flex flex-col my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-4 bg-gradient-to-r from-teal-700 via-indigo-700 to-indigo-800 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ClipboardList className="w-5 h-5" />
-                <h3 className="font-extrabold text-base">
-                  {editingDepartment ? 'Chỉnh Sửa Biên Bản Tổ Khối' : 'Tạo Biên Bản Họp Tổ Khối Mới'}
-                </h3>
+        <div className={`fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center overflow-hidden ${isDepartmentFullScreen ? 'p-0 sm:p-2' : 'p-2 sm:p-4'}`}>
+          <div className={`bg-white shadow-2xl border border-indigo-200 w-full flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+            isDepartmentFullScreen 
+              ? 'h-full sm:h-full sm:rounded-2xl' 
+              : 'max-w-[98%] sm:max-w-6xl h-[92vh] rounded-3xl my-auto'
+          }`}>
+            <div className="p-3.5 sm:p-4 bg-gradient-to-r from-teal-700 via-indigo-700 to-indigo-800 text-white flex items-center justify-between shrink-0 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-2xl bg-white/10 backdrop-blur-xs shrink-0">
+                  <ClipboardList className="w-5 h-5 text-indigo-200" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-lg leading-tight">
+                    {editingDepartment ? 'Chỉnh Sửa Biên Bản Họp Tổ Khối' : 'Soạn Thảo Biên Bản Họp Tổ Khối Mới'}
+                  </h3>
+                  <p className="text-[11px] text-indigo-100 font-medium hidden sm:block">Khung soạn thảo toàn màn hình rộng rãi, tối ưu việc nhập văn bản hành chính & sinh hoạt chuyên môn</p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleInlineListening(
+                      'dept_reviewPastWork',
+                      deptFormReviewPastWork,
+                      setDeptFormReviewPastWork
+                    )
+                  }
+                  className={`px-2.5 py-1.5 rounded-xl font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all ${
+                    isInlineListening && inlineRecordingField === 'dept_reviewPastWork'
+                      ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
+                      : 'bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white'
+                  }`}
+                  title="Ghi âm trực tiếp vào khung nội dung cuộc họp"
+                >
+                  {isInlineListening && inlineRecordingField === 'dept_reviewPastWork' ? (
+                    <>
+                      <MicOff className="w-4 h-4 text-rose-200 animate-spin" />
+                      <span>⏹️ Dừng ghi âm</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-4 h-4 text-rose-100" />
+                      <span className="hidden sm:inline">🎙️ Ghi âm trực tiếp AI</span>
+                      <span className="sm:hidden">🎙️ Mic</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDepartmentFullScreen(!isDepartmentFullScreen)}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all border border-white/20"
+                  title={isDepartmentFullScreen ? "Thu nhỏ cửa sổ" : "Phóng to toàn màn hình (Full khung)"}
+                >
+                  {isDepartmentFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  <span className="hidden md:inline">{isDepartmentFullScreen ? "Thu nhỏ" : "Full khung"}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsTemplateModalOpen(true)}
-                  className="px-2.5 py-1 rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 font-extrabold text-[11px] shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 font-extrabold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer transition-all"
                   title="Chọn mẫu biên bản có sẵn"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>⚡ Mẫu nhanh</span>
+                  <Sparkles className="w-4 h-4 text-amber-900" />
+                  <span className="hidden sm:inline">⚡ Chọn Mẫu Nhanh</span>
+                  <span className="sm:hidden">⚡ Mẫu</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsDepartmentModalOpen(false)}
-                  className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-xl cursor-pointer"
+                  className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-xl cursor-pointer transition-colors"
+                  title="Đóng cửa sổ"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
             </div>
 
-            <form onSubmit={handleSaveDepartment} className="p-4 space-y-4 overflow-y-auto flex-1">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Tên Biên Bản (*)</label>
-                <input
-                  type="text"
-                  name="title"
-                  defaultValue={editingDepartment?.title || 'Biên bản họp Tổ chuyên môn Khối 3 - Tuần 8'}
-                  required
-                  placeholder="Ví dụ: Biên bản họp Tổ chuyên môn Khối 3 - Đánh giá công tác tuần 8 & Kế hoạch tuần 9"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                />
+            <form onSubmit={handleSaveDepartment} className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 bg-slate-50/50">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs sm:text-sm font-black text-slate-800">Tên Biên Bản (*)</label>
+                  <input
+                    type="text"
+                    name="title"
+                    defaultValue={editingDepartment?.title || 'Biên bản họp Tổ chuyên môn Khối 3 - Tuần 8'}
+                    required
+                    placeholder="Ví dụ: Biên bản họp Tổ chuyên môn Khối 3 - Đánh giá công tác tuần 8 & Kế hoạch tuần 9"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="text-xs font-extrabold text-slate-700">Thuộc Tổ Khối</label>
+                    <select
+                      name="department"
+                      defaultValue={editingDepartment?.department || 'Tổ Khối 1'}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    >
+                      {DEPARTMENT_OPTIONS.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-extrabold text-slate-700">Thư mục lưu trữ</label>
+                    <select
+                      name="folderId"
+                      defaultValue={
+                        editingDepartment?.folderId ||
+                        (selectedFolderId !== 'all' && selectedFolderId !== 'uncategorized' ? selectedFolderId : 'uncategorized')
+                      }
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="uncategorized">📂 Mặc định (Chưa phân loại)</option>
+                      {activeTabFolders.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          📁 {f.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-extrabold text-slate-700">Ngày họp (*)</label>
+                    <input
+                      type="date"
+                      name="meetingDate"
+                      defaultValue={editingDepartment?.meetingDate || today()}
+                      required
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-extrabold text-slate-700">Giờ bắt đầu</label>
+                    <input
+                      type="time"
+                      name="timeStart"
+                      defaultValue={editingDepartment?.timeStart || '14:00'}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-extrabold text-slate-700">Giờ kết thúc</label>
+                    <input
+                      type="time"
+                      name="timeEnd"
+                      defaultValue={editingDepartment?.timeEnd || '16:00'}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-extrabold text-slate-700">Chủ trì (Tổ trưởng)</label>
+                    <input
+                      type="text"
+                      name="chairperson"
+                      defaultValue={editingDepartment?.chairperson || currentUser?.name || ''}
+                      required
+                      placeholder="Họ và tên Tổ trưởng"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-extrabold text-slate-700">Thư ký họp</label>
+                    <input
+                      type="text"
+                      name="secretary"
+                      defaultValue={editingDepartment?.secretary || ''}
+                      required
+                      placeholder="Họ và tên Thư ký"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50/80 p-3 rounded-2xl border border-slate-200">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-extrabold text-slate-700">Tổng số thành viên</label>
+                    <input
+                      type="number"
+                      name="totalMembers"
+                      defaultValue={editingDepartment?.totalMembers || 6}
+                      min={1}
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-extrabold text-slate-700">Số có mặt</label>
+                    <input
+                      type="number"
+                      name="presentMembers"
+                      defaultValue={editingDepartment?.presentMembers || 6}
+                      min={0}
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-extrabold text-slate-700">Số vắng mặt (Lý do)</label>
+                    <input
+                      type="text"
+                      name="absentMembers"
+                      defaultValue={editingDepartment?.absentMembers || 'Không'}
+                      placeholder="Ghi lý do vắng nếu có"
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-extrabold text-slate-700">Mục đích cuộc họp</label>
+                  <input
+                    type="text"
+                    name="purpose"
+                    defaultValue={editingDepartment?.purpose || 'Đánh giá rút kinh nghiệm tuần qua và triển khai kế hoạch chuyên môn tuần tới'}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Thuộc Tổ Khối</label>
-                  <select
-                    name="department"
-                    defaultValue={editingDepartment?.department || 'Tổ Khối 1'}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+              {/* Main Document Content Textareas */}
+              <div className="space-y-4">
+                <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                    <label className="text-xs sm:text-sm font-black text-indigo-950 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block shrink-0" />
+                      <span>I. NỘI DUNG SINH HOẠT</span>
+                    </label>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleInlineListening(
+                            'dept_reviewPastWork',
+                            deptFormReviewPastWork,
+                            setDeptFormReviewPastWork
+                          )
+                        }
+                        className={`px-3 py-1 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                          isInlineListening && inlineRecordingField === 'dept_reviewPastWork'
+                            ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                        }`}
+                        title="Bấm để Bắt đầu/Dừng ghi âm giọng nói trực tiếp vào phần I"
+                      >
+                        {isInlineListening && inlineRecordingField === 'dept_reviewPastWork' ? (
+                          <>
+                            <MicOff className="w-3.5 h-3.5 text-rose-200 animate-spin" />
+                            <span>⏹️ Dừng ghi âm</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="w-3.5 h-3.5 text-rose-600" />
+                            <span>🎙️ Ghi âm trực tiếp phần I</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInlineRefineAI(deptFormReviewPastWork, setDeptFormReviewPastWork)}
+                        disabled={isRefiningVoice || !deptFormReviewPastWork.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Tinh lọc chữ trong phần I thành văn phong sư phạm chuẩn giáo dục"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 text-purple-600" />
+                        <span>✨ Tinh lọc AI</span>
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    name="reviewPastWork"
+                    rows={5}
+                    value={deptFormReviewPastWork}
+                    onChange={(e) => setDeptFormReviewPastWork(e.target.value)}
+                    placeholder="Nhập nội dung đánh giá công tác chuyên môn, ưu điểm, hạn chế... (Bấm '🎙️ Ghi âm trực tiếp phần I' để nói trực tiếp vào ô này)"
+                    className="w-full p-3.5 bg-slate-50/80 border border-slate-200/90 rounded-2xl text-xs sm:text-sm font-normal leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-sans"
+                  />
+                </div>
+
+                <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                    <label className="text-xs sm:text-sm font-black text-indigo-950 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block shrink-0" />
+                      <span>II. SINH HOẠT CHUYÊN MÔN THEO HƯỚNG NGHIÊN CỨU BÀI HỌC</span>
+                    </label>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleInlineListening(
+                            'dept_upcomingPlan',
+                            deptFormUpcomingPlan,
+                            setDeptFormUpcomingPlan
+                          )
+                        }
+                        className={`px-3 py-1 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                          isInlineListening && inlineRecordingField === 'dept_upcomingPlan'
+                            ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                        }`}
+                        title="Bấm để Bắt đầu/Dừng ghi âm giọng nói trực tiếp vào phần II"
+                      >
+                        {isInlineListening && inlineRecordingField === 'dept_upcomingPlan' ? (
+                          <>
+                            <MicOff className="w-3.5 h-3.5 text-rose-200 animate-spin" />
+                            <span>⏹️ Dừng ghi âm</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="w-3.5 h-3.5 text-rose-600" />
+                            <span>🎙️ Ghi âm trực tiếp phần II</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInlineRefineAI(deptFormUpcomingPlan, setDeptFormUpcomingPlan)}
+                        disabled={isRefiningVoice || !deptFormUpcomingPlan.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Tinh lọc chữ trong phần II thành văn phong sư phạm chuẩn giáo dục"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 text-purple-600" />
+                        <span>✨ Tinh lọc AI</span>
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    name="upcomingPlan"
+                    rows={8}
+                    value={deptFormUpcomingPlan}
+                    onChange={(e) => setDeptFormUpcomingPlan(e.target.value)}
+                    placeholder="Nhập chi tiết các bước nghiên cứu bài học... (Bấm '🎙️ Ghi âm trực tiếp phần II' để nói trực tiếp vào ô này)"
+                    className="w-full p-3.5 bg-slate-50/80 border border-slate-200/90 rounded-2xl text-xs sm:text-sm font-normal leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-sans"
+                  />
+                </div>
+
+                <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                    <label className="text-xs sm:text-sm font-black text-indigo-950 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block shrink-0" />
+                      <span>III. KẾT LUẬN CHUNG VÀ PHÂN CÔNG THỰC HIỆN</span>
+                    </label>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleInlineListening(
+                            'dept_discussions',
+                            deptFormDiscussions,
+                            setDeptFormDiscussions
+                          )
+                        }
+                        className={`px-3 py-1 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                          isInlineListening && inlineRecordingField === 'dept_discussions'
+                            ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                        }`}
+                        title="Bấm để Bắt đầu/Dừng ghi âm giọng nói trực tiếp vào phần III"
+                      >
+                        {isInlineListening && inlineRecordingField === 'dept_discussions' ? (
+                          <>
+                            <MicOff className="w-3.5 h-3.5 text-rose-200 animate-spin" />
+                            <span>⏹️ Dừng ghi âm</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="w-3.5 h-3.5 text-rose-600" />
+                            <span>🎙️ Ghi âm trực tiếp phần III</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInlineRefineAI(deptFormDiscussions, setDeptFormDiscussions)}
+                        disabled={isRefiningVoice || !deptFormDiscussions.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Tinh lọc chữ trong phần III thành văn phong sư phạm chuẩn giáo dục"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 text-purple-600" />
+                        <span>✨ Tinh lọc AI</span>
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    name="discussions"
+                    rows={5}
+                    value={deptFormDiscussions}
+                    onChange={(e) => setDeptFormDiscussions(e.target.value)}
+                    placeholder="Nhập kết luận chung & phân công nhiệm vụ... (Bấm '🎙️ Ghi âm trực tiếp phần III' để nói trực tiếp vào ô này)"
+                    className="w-full p-3.5 bg-slate-50/80 border border-slate-200/90 rounded-2xl text-xs sm:text-sm font-normal leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-sans"
+                  />
+                </div>
+
+                <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                    <label className="text-xs sm:text-sm font-black text-indigo-950 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block shrink-0" />
+                      <span>IV. KẾT THÚC</span>
+                    </label>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleInlineListening(
+                            'dept_resolutions',
+                            deptFormResolutions,
+                            setDeptFormResolutions
+                          )
+                        }
+                        className={`px-3 py-1 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                          isInlineListening && inlineRecordingField === 'dept_resolutions'
+                            ? 'bg-rose-600 text-white animate-pulse ring-2 ring-rose-300'
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                        }`}
+                        title="Bấm để Bắt đầu/Dừng ghi âm giọng nói trực tiếp vào phần IV"
+                      >
+                        {isInlineListening && inlineRecordingField === 'dept_resolutions' ? (
+                          <>
+                            <MicOff className="w-3.5 h-3.5 text-rose-200 animate-spin" />
+                            <span>⏹️ Dừng ghi âm</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="w-3.5 h-3.5 text-rose-600" />
+                            <span>🎙️ Ghi âm trực tiếp phần IV</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInlineRefineAI(deptFormResolutions, setDeptFormResolutions)}
+                        disabled={isRefiningVoice || !deptFormResolutions.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Tinh lọc chữ trong phần IV thành văn phong sư phạm chuẩn giáo dục"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 text-purple-600" />
+                        <span>✨ Tinh lọc AI</span>
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    name="resolutions"
+                    rows={3}
+                    value={deptFormResolutions}
+                    onChange={(e) => setDeptFormResolutions(e.target.value)}
+                    placeholder="Thời gian kết thúc cuộc họp & ghi chú... (Bấm '🎙️ Ghi âm trực tiếp phần IV' để nói trực tiếp vào ô này)"
+                    className="w-full p-3.5 bg-slate-50/80 border border-slate-200/90 rounded-2xl text-xs sm:text-sm font-normal leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-sans"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-2 shrink-0">
+                <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+                  💡 Khung soạn thảo rộng rãi giúp Thầy/Cô nhìn toàn cảnh và nhập nội dung biên bản dài một cách dễ dàng.
+                </span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsDepartmentModalOpen(false)}
+                    className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer transition-colors"
                   >
-                    {DEPARTMENT_OPTIONS.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Thư mục lưu trữ</label>
-                  <select
-                    name="folderId"
-                    defaultValue={
-                      editingDepartment?.folderId ||
-                      (selectedFolderId !== 'all' && selectedFolderId !== 'uncategorized' ? selectedFolderId : 'uncategorized')
-                    }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md shadow-indigo-600/25 cursor-pointer transition-all"
                   >
-                    <option value="uncategorized">📂 Mặc định (Chưa phân loại)</option>
-                    {activeTabFolders.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        📁 {f.name}
-                      </option>
-                    ))}
-                  </select>
+                    Lưu Biên Bản
+                  </button>
                 </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Ngày họp (*)</label>
-                  <input
-                    type="date"
-                    name="meetingDate"
-                    defaultValue={editingDepartment?.meetingDate || today()}
-                    required
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Giờ bắt đầu</label>
-                  <input
-                    type="time"
-                    name="timeStart"
-                    defaultValue={editingDepartment?.timeStart || '14:00'}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Giờ kết thúc</label>
-                  <input
-                    type="time"
-                    name="timeEnd"
-                    defaultValue={editingDepartment?.timeEnd || '16:00'}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Chủ trì (Tổ trưởng)</label>
-                  <input
-                    type="text"
-                    name="chairperson"
-                    defaultValue={editingDepartment?.chairperson || currentUser?.name || ''}
-                    required
-                    placeholder="Họ và tên Tổ trưởng"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">Thư ký họp</label>
-                  <input
-                    type="text"
-                    name="secretary"
-                    defaultValue={editingDepartment?.secretary || ''}
-                    required
-                    placeholder="Họ và tên Thư ký"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700">Tổng số thành viên</label>
-                  <input
-                    type="number"
-                    name="totalMembers"
-                    defaultValue={editingDepartment?.totalMembers || 6}
-                    min={1}
-                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700">Số có mặt</label>
-                  <input
-                    type="number"
-                    name="presentMembers"
-                    defaultValue={editingDepartment?.presentMembers || 6}
-                    min={0}
-                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700">Số vắng mặt (Lý do)</label>
-                  <input
-                    type="text"
-                    name="absentMembers"
-                    defaultValue={editingDepartment?.absentMembers || 'Không'}
-                    placeholder="Ghi lý do vắng nếu có"
-                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">Mục đích cuộc họp</label>
-                <input
-                  type="text"
-                  name="purpose"
-                  defaultValue={editingDepartment?.purpose || 'Đánh giá rút kinh nghiệm tuần qua và triển khai kế hoạch chuyên môn tuần tới'}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">I. Đánh giá công tác tuần/tháng qua</label>
-                <textarea
-                  name="reviewPastWork"
-                  rows={3}
-                  defaultValue={editingDepartment?.reviewPastWork || '1. Thực hiện chương trình: 100% giáo viên dạy đúng PPCT.\n2. Ưu điểm: Áp dụng hiệu quả đồ dùng dạy học và phần mềm tương tác.\n3. Tồn tại: Một số em học sinh viết chữ còn chưa đều.'}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">II. Triển khai kế hoạch tuần/tháng tới</label>
-                <textarea
-                  name="upcomingPlan"
-                  rows={3}
-                  defaultValue={editingDepartment?.upcomingPlan || '1. Giảng dạy đúng tiến độ chương trình.\n2. Thống nhất ma trận và nội dung ôn tập kiểm tra.\n3. Tăng cường sinh hoạt chuyên môn theo nghiên cứu bài học.'}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">III. Ý kiến thảo luận của các thành viên</label>
-                <textarea
-                  name="discussions"
-                  rows={2}
-                  defaultValue={editingDepartment?.discussions || ''}
-                  placeholder="Ghi tóm tắt ý kiến đóng góp của các giáo viên trong tổ..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">IV. Kết luận & Quyết nghị của Tổ khối</label>
-                <textarea
-                  name="resolutions"
-                  rows={2}
-                  defaultValue={editingDepartment?.resolutions || '100% các thành viên trong tổ nhất trí với các nội dung trên.'}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsDepartmentModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-md shadow-indigo-600/20"
-                >
-                  Lưu Biên Bản
-                </button>
               </div>
             </form>
           </div>
@@ -2660,6 +3348,253 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                   Đóng
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL: SPEECH-TO-TEXT & AI REFINEMENT       */}
+      {/* ========================================== */}
+      {isVoiceModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-rose-200 w-full max-w-4xl max-h-[92vh] flex flex-col my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-rose-700 via-pink-700 to-purple-800 text-white flex items-center justify-between shrink-0 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-white/10 backdrop-blur-xs shrink-0 animate-pulse">
+                  <Mic className="w-5 h-5 text-rose-200" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base sm:text-lg leading-tight flex items-center gap-2">
+                    <span>Chuyển Giọng Nói Thành Văn Bản Biên Bản Họp AI</span>
+                    <span className="text-[10px] bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
+                      Chuẩn Đạo Đức Ngành GD
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-rose-100 font-medium hidden sm:block">
+                    Ghi âm trực tiếp cuộc họp hoặc dán văn bản thô — AI tự động lọc bớt ý lan man, tổng hợp nội dung cốt lõi theo văn phong sư phạm
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isListening) toggleListening();
+                  setIsVoiceModalOpen(false);
+                }}
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-xl cursor-pointer transition-colors"
+                title="Đóng cửa sổ"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 bg-slate-50/50">
+              {/* Voice Control & Status Panel */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-rose-50/80 to-pink-50/80 p-3.5 rounded-2xl border border-rose-100">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={toggleListening}
+                      className={`px-5 py-2.5 rounded-2xl font-black text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer ${
+                        isListening
+                          ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse ring-4 ring-rose-300'
+                          : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white'
+                      }`}
+                    >
+                      {isListening ? (
+                        <>
+                          <MicOff className="w-4 h-4 text-rose-200 animate-spin" />
+                          <span>🔴 Đang Ghi Âm... (Bấm để Dừng)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-4 h-4" />
+                          <span>🎙️ Bắt Đầu Ghi Âm Giọng Nói</span>
+                        </>
+                      )}
+                    </button>
+
+                    {isListening && (
+                      <span className="flex items-center gap-1.5 text-xs font-black text-rose-700 animate-pulse">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block" />
+                        <span>Trình duyệt đang lắng nghe tiếng Việt (vi-VN)...</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleRefineVoiceWithAI}
+                    disabled={isRefiningVoice || !voiceTranscript.trim()}
+                    className={`px-5 py-2.5 rounded-2xl font-black text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer ${
+                      isRefiningVoice || !voiceTranscript.trim()
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                        : 'bg-gradient-to-r from-purple-700 via-indigo-700 to-teal-700 hover:from-purple-800 hover:to-teal-800 text-white shadow-indigo-500/25'
+                    }`}
+                  >
+                    {isRefiningVoice ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Gemini AI Đang Tinh Lọc Đạo Đức & Sư Phạm...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-4 h-4 text-purple-200" />
+                        <span>✨ Tinh Lọc AI Chuẩn Giáo Dục</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Raw Transcript Area */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <Volume2 className="w-4 h-4 text-rose-600" />
+                      <span>Nội Dung Lời Nói / Văn Bản Cuộc Họp Thô:</span>
+                    </label>
+                    {voiceTranscript && (
+                      <button
+                        type="button"
+                        onClick={() => setVoiceTranscript('')}
+                        className="text-[11px] font-bold text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Xóa văn bản thô</span>
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    value={voiceTranscript}
+                    onChange={(e) => setVoiceTranscript(e.target.value)}
+                    rows={5}
+                    placeholder="Nói trực tiếp qua Micro hoặc dán đoạn ghi âm cuộc họp vào đây... (Ví dụ: Thưa các đồng chí, hôm nay tổ ta họp đánh giá tuần 8 và triển khai nghiên cứu bài học tiết Tin học lớp 3. Tuần qua 100% giáo viên dạy đúng phân môn. Bạn An vắng có lý do...)"
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm font-medium leading-relaxed focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                  />
+                  <p className="text-[11px] text-slate-500 font-medium italic">
+                    💡 Mẹo: Thầy/Cô có thể nói tự do hoặc nói ngắt quãng. Bấm nút <b>"✨ Tinh Lọc AI Chuẩn Giáo Dục"</b>, hệ thống Gemini AI sẽ tự động loại bỏ câu nói đùa, lời lan man và chuẩn hóa toàn bộ thành ngôn từ chuẩn mực sư phạm!
+                  </p>
+                </div>
+              </div>
+
+              {/* AI Refined Output Preview Section */}
+              {isRefiningVoice && (
+                <div className="p-8 bg-white rounded-2xl border border-purple-200 shadow-xs text-center space-y-3">
+                  <Loader2 className="w-8 h-8 text-purple-600 animate-spin mx-auto" />
+                  <p className="font-extrabold text-sm text-purple-900">
+                    Gemini AI đang phân tích lời nói, lọc bỏ nội dung lan man và tổng hợp thành Biên bản chuẩn mực sư phạm...
+                  </p>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Đang rà soát từ ngữ đảm bảo tính khách quan, tinh thần đoàn kết và chuẩn mực văn phong ngành Giáo dục.
+                  </p>
+                </div>
+              )}
+
+              {refinedVoiceResult && (
+                <div className="bg-white p-5 rounded-2xl border-2 border-emerald-400 shadow-md space-y-4 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                      <h4 className="font-black text-slate-900 text-sm sm:text-base">
+                        KẾT QUẢ TINH LỌC BIÊN BẢN CHUẨN MỰC GIÁO DỤC (AI)
+                      </h4>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                      ✓ Đã lọc bỏ lan man & chuẩn hóa văn phong
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 text-xs sm:text-sm">
+                    {refinedVoiceResult.title && (
+                      <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-100">
+                        <strong className="text-indigo-900 font-extrabold block text-xs">TÊN CUỘC HỌP TRANG TRỌNG:</strong>
+                        <p className="font-black text-indigo-950 mt-0.5">{refinedVoiceResult.title}</p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {refinedVoiceResult.reviewPastWork && (
+                        <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                          <strong className="text-slate-900 font-black text-xs block text-teal-800">I. NỘI DUNG SINH HOẠT / ĐÁNH GIÁ:</strong>
+                          <p className="text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{refinedVoiceResult.reviewPastWork}</p>
+                        </div>
+                      )}
+
+                      {refinedVoiceResult.upcomingPlan && (
+                        <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                          <strong className="text-slate-900 font-black text-xs block text-indigo-800">II. SINH HOẠT CHUYÊN MÔN (NGHIÊN CỨU BÀI HỌC):</strong>
+                          <p className="text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{refinedVoiceResult.upcomingPlan}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {refinedVoiceResult.discussions && (
+                        <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                          <strong className="text-slate-900 font-black text-xs block text-amber-800">III. KẾT LUẬN & PHÂN CÔNG:</strong>
+                          <p className="text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{refinedVoiceResult.discussions}</p>
+                        </div>
+                      )}
+
+                      {refinedVoiceResult.resolutions && (
+                        <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                          <strong className="text-slate-900 font-black text-xs block text-emerald-800">IV. NGHỊ QUYẾT & KẾT THÚC:</strong>
+                          <p className="text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{refinedVoiceResult.resolutions}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {refinedVoiceResult.actionItems && (
+                      <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 space-y-1">
+                        <strong className="text-amber-900 font-black text-xs block">TRỌNG TÂM NHIỆM VỤ PHÂN CÔNG GIÁO VIÊN:</strong>
+                        <p className="text-amber-950 font-medium leading-relaxed whitespace-pre-wrap">{refinedVoiceResult.actionItems}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions to Insert to Modal */}
+                  <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleApplyToPersonalModal}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-md shadow-teal-600/20 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      <span>📘 Đưa vào Sổ họp Cá nhân</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleApplyToDepartmentModal}
+                      className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                    >
+                      <ClipboardList className="w-4 h-4" />
+                      <span>📋 Đưa vào Biên bản Họp Tổ khối Mới</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between gap-2 shrink-0">
+              <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+                💡 Công nghệ nhận diện tiếng Việt & tinh lọc Gemini AI giúp chuyển đổi lời nói cuộc họp nhanh chóng, chính xác.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isListening) toggleListening();
+                  setIsVoiceModalOpen(false);
+                }}
+                className="px-5 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer ml-auto"
+              >
+                Đóng
+              </button>
             </div>
           </div>
         </div>

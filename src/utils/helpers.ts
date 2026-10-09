@@ -170,23 +170,47 @@ export const DEFAULT_PERSONAL_MEETINGS = [
 export const DEFAULT_DEPARTMENT_MEETINGS = [
   {
     id: 'dm-1',
-    title: 'Biên bản họp Tổ chuyên môn Khối 3 - Đánh giá công tác tuần 8 & Kế hoạch tuần 9',
+    title: 'BIÊN BẢN SINH HOẠT TỔ KHỐI',
     department: 'Tổ Khối 3',
     meetingDate: today(),
     timeStart: '14:00',
-    timeEnd: '16:00',
-    location: 'Phòng học 3A1',
+    timeEnd: '16:30',
+    location: 'Phòng họp Chuyên môn',
     chairperson: 'Nguyễn Thị B (Tổ trưởng)',
     secretary: 'Trần Văn C (Thư ký)',
     totalMembers: 6,
     presentMembers: 6,
     absentMembers: 'Không',
-    purpose: 'Đánh giá rút kinh nghiệm giảng dạy tuần 8 và triển khai kế hoạch chuyên môn tuần 9',
     folderId: 'mf-tk3',
-    reviewPastWork: '1. Việc thực hiện chương trình: 100% giáo viên dạy đúng PPCT.\n2. Ứng dụng công nghệ thông tin: Các giáo viên đã tích cực sử dụng Trò chơi kéo thả & Vòng quay may mắn gây hứng thú cho học sinh.',
-    upcomingPlan: '1. Thực hiện giảng dạy tuần 9 đúng tiến độ.\n2. Thống nhất ma trận đề kiểm tra giữa học kỳ 1 môn Toán & Tiếng Việt Khối 3.\n3. Tổ chức 1 tiết sinh hoạt chuyên môn theo nghiên cứu bài học.',
-    discussions: '- Đ/c B: Đề nghị tăng cường bài tập trắc nghiệm trực quan cho học sinh yếu.\n- Đ/c C: Thống nhất lịch dự giờ chéo giữa các thành viên trong tổ.',
-    resolutions: '100% thành viên nhất trí với đánh giá và kế hoạch công tác tuần 9.',
+
+    // II. NỘI DUNG SINH HOẠT TỔ KHỐI
+    pastWorkPros: '100% giáo viên thực hiện đúng quy chế chuyên môn, hoàn thành kế hoạch dạy học tuần qua, chuẩn bị hồ sơ giáo án đầy đủ.',
+    pastWorkCons: 'Một số học sinh chưa tập trung cao trong hoạt động nhóm môn Toán.',
+    upcomingTasks: 'Tiếp tục thực hiện chương trình giảng dạy tuần tới, đổi mới phương pháp tổ chức hoạt động học cho học sinh.',
+    documentsDeployment: 'Triển khai công văn hướng dẫn thực hiện sinh hoạt chuyên môn theo nghiên cứu bài học.',
+    memberFeedback: 'Đồng chí B nhất trí với đánh giá và đề xuất bổ sung thiết bị dạy học số.',
+    section2Conclusion: '100% thành viên thống nhất với nội dung đánh giá và kế hoạch công tác.',
+
+    // III. SINH HOẠT CHUYÊN MÔN THEO HƯỚNG NGHIÊN CỨU BÀI HỌC
+    lessonSubject: 'Toán',
+    lessonClass: 'Khối 3 (Lớp 3A1)',
+    lessonName: 'Bài dạy minh họa môn Toán Khối 3',
+    lessonTeacher: 'Nguyễn Văn A',
+    lessonExpectedTime: 'Tuần tới',
+    lessonReason: 'Cần nâng cao năng lực tính toán và ứng dụng phương pháp dạy học trực quan cho học sinh.',
+    lessonPlanDiscussion: 'Các thành viên đóng góp ý kiến về tiến trình các hoạt động học và dự kiến tình huống phát sinh.',
+    lessonPlanAgreedContent: 'Thống nhất cấu trúc 4 hoạt động của Kế hoạch bài dạy theo đúng hướng dẫn.',
+    obsGoodActivities: 'Học sinh tích cực tham gia thảo luận nhóm, tự tin báo cáo kết quả.',
+    obsDifficulties: 'Một vài em thao tác còn chậm ở bài tập vận dụng.',
+    obsSupportNeeded: 'Giáo viên cần hướng dẫn chi tiết hơn trước khi giao nhiệm vụ.',
+    obsEmergingSituations: 'Học sinh phản hồi tốt khi sử dụng đồ dùng trực quan.',
+    postLessonDiscussion: 'Phân tích diễn biến hoạt động học của học sinh qua tiết dạy minh họa.',
+    postLessonConclusion: 'Rút kinh nghiệm và vận dụng linh hoạt các giải pháp vào bài dạy tiếp theo.',
+
+    // IV. KẾT LUẬN CHUNG VÀ PHÂN CÔNG THỰC HIỆN
+    generalConclusionPoints: '1. Tiếp tục thực hiện nghiêm túc kế hoạch giáo dục và nhiệm vụ chuyên môn.\n2. Vận dụng những kinh nghiệm, giải pháp đã thống nhất vào quá trình giảng dạy.\n3. Điều chỉnh, hoàn thiện kế hoạch bài dạy trên cơ sở phân tích hoạt động học của học sinh.\n4. Tăng cường trao đổi, hỗ trợ đồng nghiệp và quan tâm đến sự tiến bộ của từng đối tượng học sinh.',
+    assignmentsList: 'Đồng chí A: Chuẩn bị bài dạy minh họa.\nĐồng chí B: Tổng hợp hồ sơ chuyên môn tổ.\nĐồng chí C: Chuẩn bị thiết bị và ghi biên bản.',
+
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }

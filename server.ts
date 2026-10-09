@@ -1714,6 +1714,84 @@ Trả về DUY NHẤT một mảng JSON hợp lệ các câu hỏi trắc nghi�
   }
 });
 
+// API ROUTE: Chuyển giọng nói / văn bản cuộc họp thô thành biên bản chuẩn đạo đức & sư phạm ngành GD
+app.post('/api/ai/meeting-speech-refine', async (req, res) => {
+  try {
+    const { rawTranscript, meetingType, customApiKey } = req.body;
+    const apiKeyToUse = customApiKey || process.env.GEMINI_API_KEY;
+
+    if (!apiKeyToUse) {
+      return res.status(400).json({ error: 'Chưa cài đặt Gemini API Key' });
+    }
+
+    if (!rawTranscript || !rawTranscript.trim()) {
+      return res.status(400).json({ error: 'Chưa có nội dung lời nói hoặc văn bản thô để xử lý.' });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: apiKeyToUse,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    const promptText = `Bạn là một thư ký hành chính trường học xuất sắc của ngành Giáo dục và Đào tạo Việt Nam, am hiểu sâu sắc về văn phong hành chính, chuẩn mực đạo đức nhà giáo và các quy định về biên bản cuộc họp trường học/tổ chuyên môn.
+
+Nhiệm vụ:
+Phân tích lời nói / đoạn ghi âm / nội dung thô từ cuộc họp giáo viên dưới đây và tổng hợp thành Biên bản họp chuyên nghiệp, súc tích, đầy đủ.
+
+Yêu cầu BẮT BUỘC:
+1. ĐÚNG CHUẨN MỰC, ĐẠO ĐỨC NGÀNH GIÁO DỤC: Dùng ngôn từ trang trọng, văn phong sư phạm, khách quan, chuẩn mực, xây dựng tinh thần đoàn kết nhà trường và tôn trọng đồng nghiệp.
+2. TẬP TRUNG NỘI DUNG CỐT LÕI: Lọc bỏ hoàn toàn các lời nói chuyện phiếm, nói đùa lan man, ý kiến bên lề không liên quan đến công tác chuyên môn/nhà trường.
+3. CẤU TRÚC RÕ RÀNG VÀ CHUẨN XÁC:
+   - "title": Tên cuộc họp trang trọng (ví dụ: Biên bản họp Tổ chuyên môn Khối ... / Biên bản Họp Chuyên môn...)
+   - "reviewPastWork": I. NỘI DUNG SINH HOẠT / ĐÁNH GIÁ CÔNG TÁC (Tóm tắt các đánh giá, kết quả đã đạt, ưu điểm và lưu ý)
+   - "upcomingPlan": II. SINH HOẠT CHUYÊN MÔN THEO NGHIÊN CỨU BÀI HỌC / KẾ HOẠCH (Các bước chọn bài học, thảo luận kế hoạch bài dạy, dự giờ minh họa hoặc kế hoạch tuần tới)
+   - "discussions": III. KẾT LUẬN CHUNG VÀ PHÂN CÔNG THỰC HIỆN (Kết luận của Tổ trưởng/Chủ trì và phân công công việc)
+   - "resolutions": IV. KẾT THÚC (Biểu quyết/Thống nhất chung và thời điểm kết thúc)
+   - "actionItems": Các nhiệm vụ phân công cụ thể cho giáo viên (dạng danh sách gạch đầu dòng ngắn gọn)
+
+Đoạn văn bản lời nói/cuộc họp thô:
+"""
+${rawTranscript}
+"""
+
+Trả về DUY NHẤT một đối tượng JSON hợp lệ (không kèm code block hay văn bản phụ):
+{
+  "title": "...",
+  "reviewPastWork": "...",
+  "upcomingPlan": "...",
+  "discussions": "...",
+  "resolutions": "...",
+  "actionItems": "..."
+}`;
+
+    for (const modelName of ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview']) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: promptText,
+          config: {
+            responseMimeType: 'application/json'
+          }
+        });
+
+        if (response.text) {
+          const parsed = safeParseJSON(response.text);
+          if (parsed && typeof parsed === 'object') {
+            return res.json({ success: true, data: parsed });
+          }
+        }
+      } catch (err) {
+        console.warn(`Model ${modelName} meeting speech refine error:`, err);
+      }
+    }
+
+    return res.status(500).json({ error: 'Không thể phân tích lời nói bằng AI. Vui lòng thử lại.' });
+  } catch (err: any) {
+    console.error('meeting-speech-refine error:', err);
+    return res.status(500).json({ error: err.message || 'Lỗi server' });
+  }
+});
+
 // Start Server
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
