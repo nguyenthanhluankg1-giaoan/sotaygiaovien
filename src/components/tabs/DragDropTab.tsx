@@ -43,7 +43,7 @@ import {
 import confetti from 'canvas-confetti';
 import { AppState, DragDropGameItem, DragDropPair, DragDropTargetZone } from '../../types';
 import { playBeep, playCelebration, playTick, playWrongSound, playApplauseSound } from '../../utils/audio';
-import { DEFAULT_DRAG_DROP_GAMES, EDUCATIONAL_EMOJI_LIBRARY, EducationalEmojiItem } from '../../utils/dragDropPresets';
+import { DEFAULT_DRAG_DROP_GAMES, PRESET_CENTER_IMAGES, EDUCATIONAL_EMOJI_LIBRARY, EducationalEmojiItem } from '../../utils/dragDropPresets';
 import { uid, compressImageFile } from '../../utils/helpers';
 import { HandGestureController } from './HandGestureController';
 
@@ -67,8 +67,8 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
     return DEFAULT_DRAG_DROP_GAMES;
   }, [state.dragDropGames]);
 
-  // Main View Mode: 'play' | 'manage' | 'edit'
-  const [activeTab, setActiveTab] = useState<'play' | 'manage'>('play');
+  // Main View Mode: 'play' | 'manage'
+  const [activeTab, setActiveTab] = useState<'play' | 'manage'>('manage');
 
   // Filter for selecting games
   const [filterSubject, setFilterSubject] = useState<string>('all');
@@ -272,19 +272,38 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
         setSelectedTouchItem(null);
         setFeedbackFlash({ zoneId: targetId, status: 'correct' });
 
-        // Play applause sound & fireworks burst on correct match!
+        // Play applause sound & multi-angle fireworks burst on correct match!
         if (soundEnabled) {
           playApplauseSound();
         }
 
-        // Fireworks burst
+        // Vibrant center-screen fireworks burst
         confetti({
-          particleCount: 45,
-          spread: 65,
-          startVelocity: 35,
-          origin: { y: 0.6 },
-          colors: ['#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#8b5cf6']
+          particleCount: 65,
+          spread: 80,
+          startVelocity: 40,
+          origin: { y: 0.55 },
+          colors: ['#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#8b5cf6', '#f43f5e', '#fbbf24'],
+          scalar: 1.15
         });
+
+        // Secondary side pop for maximum excitement
+        setTimeout(() => {
+          confetti({
+            particleCount: 35,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0.15, y: 0.65 },
+            colors: ['#38bdf8', '#f43f5e', '#a855f7']
+          });
+          confetti({
+            particleCount: 35,
+            angle: 120,
+            spread: 55,
+            origin: { x: 0.85, y: 0.65 },
+            colors: ['#34d399', '#fbbf24', '#e879f9']
+          });
+        }, 120);
 
         // Check if finished round
         const totalNeeded = activeGame.pairs?.length || 0;
@@ -321,19 +340,38 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
         setSelectedTouchItem(null);
         setFeedbackFlash({ zoneId: targetId, status: 'correct' });
 
-        // Play applause sound & fireworks burst on correct match!
+        // Play applause sound & multi-angle fireworks burst on correct match!
         if (soundEnabled) {
           playApplauseSound();
         }
 
-        // Fireworks burst
+        // Vibrant center-screen fireworks burst
         confetti({
-          particleCount: 45,
-          spread: 65,
-          startVelocity: 35,
-          origin: { y: 0.6 },
-          colors: ['#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#8b5cf6']
+          particleCount: 65,
+          spread: 80,
+          startVelocity: 40,
+          origin: { y: 0.55 },
+          colors: ['#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#8b5cf6', '#f43f5e', '#fbbf24'],
+          scalar: 1.15
         });
+
+        // Secondary side pop for maximum excitement
+        setTimeout(() => {
+          confetti({
+            particleCount: 35,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0.15, y: 0.65 },
+            colors: ['#38bdf8', '#f43f5e', '#a855f7']
+          });
+          confetti({
+            particleCount: 35,
+            angle: 120,
+            spread: 55,
+            origin: { x: 0.85, y: 0.65 },
+            colors: ['#34d399', '#fbbf24', '#e879f9']
+          });
+        }, 120);
 
         // Check if finished
         const totalNeeded = activeGame.pairs?.length || 0;
@@ -454,12 +492,29 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
   // 5. Game Creator & Customizer State
   const [editingGame, setEditingGame] = useState<DragDropGameItem | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
+  const [activeHotspotIndex, setActiveHotspotIndex] = useState<number>(0);
   const [showEmojiPickerForIndex, setShowEmojiPickerForIndex] = useState<number | null>(null);
   const [emojiSearch, setEmojiSearch] = useState<string>('');
   const fileUploadRef = useRef<HTMLInputElement>(null);
+  const centerFileUploadRef = useRef<HTMLInputElement>(null);
   const [uploadIndexTarget, setUploadIndexTarget] = useState<number | null>(null);
   const [urlModalIndex, setUrlModalIndex] = useState<number | null>(null);
   const [inputImageUrl, setInputImageUrl] = useState<string>('');
+
+  const handleUploadCenterImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingGame) return;
+    try {
+      const compressedBase64 = await compressImageFile(file, 800, 0.85);
+      setEditingGame({
+        ...editingGame,
+        centerImage: compressedBase64,
+        centerImageCaption: editingGame.centerImageCaption || 'Mô hình trung tâm'
+      });
+    } catch (err) {
+      console.error('Failed to compress center image', err);
+    }
+  };
 
   // Apply Quick Starter Templates for easy game creation
   const applyTemplateToEditor = (templateType: 'math' | 'vietnamese' | 'english' | 'science' | 'cs' | 'blank') => {
@@ -571,10 +626,9 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
       setEditingGame({
         ...editingGame,
         title: 'Trò chơi kéo thả mới',
-        description: 'Kéo hình ảnh vào ô đáp án đúng...',
+        description: 'Mô tả hướng dẫn trò chơi...',
         pairs: [
-          { id: uid('p'), image: '⭐', imageType: 'emoji', caption: 'Hình 1', targetLabel: 'Đáp án 1' },
-          { id: uid('p'), image: '🌟', imageType: 'emoji', caption: 'Hình 2', targetLabel: 'Đáp án 2' }
+          { id: uid('p'), image: '⭐', imageType: 'emoji', caption: 'Hình 1', targetLabel: 'Đáp án 1' }
         ]
       });
     }
@@ -1194,7 +1248,233 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
 
             {/* MAIN STAGE CONTENT */}
             <div className="relative z-10 flex-1 space-y-6">
-              {/* SECTION A: SOURCE DOCK (Khay hình ảnh cần kéo) */}
+              {activeGame.centerImage ? (
+                /* ============================================================ */
+                /* MODE A: CENTRAL BACKGROUND IMAGE HOTSPOT CANVAS (WITH 2 SIDE TRAYS) */
+                /* ============================================================ */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-xs font-black text-amber-300 uppercase tracking-wider bg-slate-800/80 p-3 rounded-2xl border border-slate-700/80">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>{activeGame.centerImageCaption || 'Trò chơi Đính mảnh ghép lên mô hình trung tâm'}</span>
+                    </div>
+                    <span className="text-slate-300 text-[11px] font-bold">
+                      {dockItems.length === 0 ? '🎉 Đã đính hoàn tất tất cả mảnh ghép!' : `Còn lại: ${dockItems.length} mảnh ghép`}
+                    </span>
+                  </div>
+
+                  {/* 3-COLUMN SPLIT LAYOUT: LEFT TRAY | LARGE CENTRAL PICTURE WITH HOTSPOTS | RIGHT TRAY */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                    {/* LEFT SIDE TRAY (Khay bên Trái ⬅️) */}
+                    <div className="lg:col-span-3 xl:col-span-2 p-3.5 rounded-3xl bg-slate-800/80 border-2 border-slate-700/80 shadow-lg space-y-3 min-h-[220px]">
+                      <div className="text-[11px] font-black text-amber-300 uppercase tracking-wider flex items-center justify-between border-b border-slate-700 pb-2">
+                        <span>Khay Trái ({dockItems.filter((_, i) => i % 2 === 0).length})</span>
+                        <span>⬅️</span>
+                      </div>
+
+                      <div className="flex flex-wrap lg:flex-col gap-3 items-center justify-center">
+                        {dockItems.filter((_, i) => i % 2 === 0).map((item) => {
+                          const isSelected = selectedTouchItem?.id === item.id;
+                          const isHinted = hintItemId === item.id;
+
+                          return (
+                            <div
+                              key={item.id}
+                              data-dock-id={item.id}
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggedItem(item);
+                                e.dataTransfer.setData('text/plain', item.id);
+                              }}
+                              onDragEnd={() => setDraggedItem(null)}
+                              onClick={() => {
+                                if (selectedTouchItem?.id === item.id) {
+                                  setSelectedTouchItem(null);
+                                } else {
+                                  setSelectedTouchItem(item);
+                                  if (soundEnabled) playTick();
+                                }
+                              }}
+                              className={`dock-card-item group relative flex flex-col items-center justify-center p-2.5 rounded-2xl border-2 transition-all cursor-grab active:cursor-grabbing select-none shadow-lg w-full max-w-[130px] lg:max-w-none ${
+                                isSelected
+                                  ? 'bg-amber-400/20 border-amber-400 ring-4 ring-amber-400/50 scale-105 shadow-amber-500/30'
+                                  : isHinted
+                                  ? 'bg-teal-400/30 border-teal-300 ring-4 ring-teal-400/60 animate-bounce'
+                                  : 'bg-slate-700/80 hover:bg-slate-700 border-slate-600 hover:border-amber-400 hover:scale-105'
+                              }`}
+                            >
+                              {item.imageType === 'upload' || (item.image && (item.image.startsWith('data:image') || item.image.startsWith('http'))) ? (
+                                <img src={item.image} alt={item.caption || item.targetLabel} className="w-14 h-14 object-contain rounded-xl drop-shadow-md pointer-events-none" />
+                              ) : (
+                                <span className="text-3xl drop-shadow-md select-none pointer-events-none">{item.image}</span>
+                              )}
+                              {!hideCaptionsInDock && item.caption && (
+                                <span className="text-[11px] font-bold text-slate-200 mt-1 text-center truncate max-w-full">{item.caption}</span>
+                              )}
+                              {isSelected && (
+                                <span className="absolute -top-2 -right-2 px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] shadow-sm animate-pulse">
+                                  Đang chọn
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {dockItems.filter((_, i) => i % 2 === 0).length === 0 && (
+                          <div className="text-xs text-slate-400 italic text-center py-4">Đã hết mảnh ở khay trái</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* CENTRAL BACKGROUND IMAGE WITH OVERLAID HOTSPOT TARGET ZONES (WIDE & SPACIOUS) */}
+                    <div className="lg:col-span-6 xl:col-span-8 p-4 sm:p-6 rounded-3xl bg-slate-900/95 border-4 border-amber-400/80 shadow-2xl flex flex-col items-center justify-center relative min-h-[460px] sm:min-h-[540px] lg:min-h-[620px] overflow-hidden">
+                      <div className="relative w-full max-w-5xl min-h-[420px] sm:min-h-[500px] lg:min-h-[580px] rounded-2xl overflow-hidden bg-slate-950/90 border-2 border-slate-700/80 p-3 sm:p-4 shadow-inner flex items-center justify-center select-none">
+                        <img
+                          src={activeGame.centerImage}
+                          alt={activeGame.centerImageCaption || activeGame.title}
+                          className="max-h-[540px] w-full object-contain rounded-xl drop-shadow-2xl pointer-events-none"
+                        />
+
+                        {/* OVERLAID HOTSPOT TARGET DROP ZONES */}
+                        {activeGame.pairs.map((pair, idx) => {
+                          const matchedItem = placedMatches[pair.targetLabel] as DragDropPair | undefined;
+                          const isFlashing = feedbackFlash?.zoneId === pair.targetLabel;
+                          const isFlashCorrect = isFlashing && feedbackFlash?.status === 'correct';
+                          const isFlashWrong = isFlashing && feedbackFlash?.status === 'wrong';
+                          const isDragOver = activeDropZoneId === pair.targetLabel;
+
+                          const posX = pair.xPercent ?? Math.min(85, Math.max(15, 20 + idx * 18));
+                          const posY = pair.yPercent ?? Math.min(85, Math.max(15, 30 + (idx % 2) * 35));
+
+                          return (
+                            <div
+                              key={pair.id}
+                              data-target-id={pair.targetLabel}
+                              style={{ left: `${posX}%`, top: `${posY}%` }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setActiveDropZoneId(pair.targetLabel);
+                              }}
+                              onDragLeave={() => setActiveDropZoneId(null)}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                setActiveDropZoneId(null);
+                                if (draggedItem) {
+                                  handleAttemptMatch(draggedItem, pair.targetLabel);
+                                  setDraggedItem(null);
+                                }
+                              }}
+                              onClick={() => {
+                                if (selectedTouchItem && !matchedItem) {
+                                  handleAttemptMatch(selectedTouchItem, pair.targetLabel);
+                                }
+                              }}
+                              className={`target-drop-zone absolute transform -translate-x-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-2xl border-2 transition-all text-center flex flex-col items-center justify-center min-w-[100px] sm:min-w-[125px] shadow-2xl cursor-pointer ${
+                                matchedItem
+                                  ? 'bg-emerald-950/95 border-emerald-400 text-white ring-2 ring-emerald-400/60 scale-105'
+                                  : isFlashCorrect
+                                  ? 'bg-emerald-500 border-white text-slate-950 ring-8 ring-emerald-400/80 scale-125 z-30'
+                                  : isFlashWrong
+                                  ? 'bg-rose-600/90 border-rose-300 text-white ring-8 ring-rose-500/90 animate-shake scale-110 z-30'
+                                  : isDragOver || (selectedTouchItem && !matchedItem)
+                                  ? 'bg-amber-500/90 border-amber-200 text-slate-950 ring-4 ring-amber-300 scale-110 z-20'
+                                  : 'bg-slate-900/95 border-amber-400/80 text-amber-200 hover:border-amber-300 hover:scale-105 z-10'
+                              }`}
+                            >
+                              {matchedItem ? (
+                                <div className="relative flex flex-col items-center justify-center w-full">
+                                  {matchedItem.imageType === 'upload' || (matchedItem.image && (matchedItem.image.startsWith('data:image') || matchedItem.image.startsWith('http'))) ? (
+                                    <img src={matchedItem.image} alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-lg drop-shadow-sm" />
+                                  ) : (
+                                    <span className="text-2xl sm:text-3xl select-none">{matchedItem.image}</span>
+                                  )}
+                                  <span className="text-[10px] sm:text-xs font-black text-emerald-300 mt-0.5 leading-tight">{matchedItem.caption || matchedItem.targetLabel}</span>
+                                  <span className="absolute -top-3 -right-3 p-1 rounded-full bg-emerald-500 text-white shadow-md">
+                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <span className="text-[10px] sm:text-xs font-black tracking-wider block text-amber-300 uppercase">
+                                    📍 {pair.targetLabel}
+                                  </span>
+                                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-300 block">
+                                    {selectedTouchItem ? '👉 Chạm đính' : '📥 Thả vào đây'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* RIGHT SIDE TRAY (Khay bên Phải ➡️) */}
+                    <div className="lg:col-span-3 xl:col-span-2 p-3.5 rounded-3xl bg-slate-800/80 border-2 border-slate-700/80 shadow-lg space-y-3 min-h-[220px]">
+                      <div className="text-[11px] font-black text-amber-300 uppercase tracking-wider flex items-center justify-between border-b border-slate-700 pb-2">
+                        <span>Khay bên Phải ({dockItems.filter((_, i) => i % 2 === 1).length})</span>
+                        <span>➡️</span>
+                      </div>
+
+                      <div className="flex flex-wrap lg:flex-col gap-3 items-center justify-center">
+                        {dockItems.filter((_, i) => i % 2 === 1).map((item) => {
+                          const isSelected = selectedTouchItem?.id === item.id;
+                          const isHinted = hintItemId === item.id;
+
+                          return (
+                            <div
+                              key={item.id}
+                              data-dock-id={item.id}
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggedItem(item);
+                                e.dataTransfer.setData('text/plain', item.id);
+                              }}
+                              onDragEnd={() => setDraggedItem(null)}
+                              onClick={() => {
+                                if (selectedTouchItem?.id === item.id) {
+                                  setSelectedTouchItem(null);
+                                } else {
+                                  setSelectedTouchItem(item);
+                                  if (soundEnabled) playTick();
+                                }
+                              }}
+                              className={`dock-card-item group relative flex flex-col items-center justify-center p-2.5 rounded-2xl border-2 transition-all cursor-grab active:cursor-grabbing select-none shadow-lg w-full max-w-[130px] lg:max-w-none ${
+                                isSelected
+                                  ? 'bg-amber-400/20 border-amber-400 ring-4 ring-amber-400/50 scale-105 shadow-amber-500/30'
+                                  : isHinted
+                                  ? 'bg-teal-400/30 border-teal-300 ring-4 ring-teal-400/60 animate-bounce'
+                                  : 'bg-slate-700/80 hover:bg-slate-700 border-slate-600 hover:border-amber-400 hover:scale-105'
+                              }`}
+                            >
+                              {item.imageType === 'upload' || (item.image && (item.image.startsWith('data:image') || item.image.startsWith('http'))) ? (
+                                <img src={item.image} alt={item.caption || item.targetLabel} className="w-14 h-14 object-contain rounded-xl drop-shadow-md pointer-events-none" />
+                              ) : (
+                                <span className="text-3xl drop-shadow-md select-none pointer-events-none">{item.image}</span>
+                              )}
+                              {!hideCaptionsInDock && item.caption && (
+                                <span className="text-[11px] font-bold text-slate-200 mt-1 text-center truncate max-w-full">{item.caption}</span>
+                              )}
+                              {isSelected && (
+                                <span className="absolute -top-2 -right-2 px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] shadow-sm animate-pulse">
+                                  Đang chọn
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {dockItems.filter((_, i) => i % 2 === 1).length === 0 && (
+                          <div className="text-xs text-slate-400 italic text-center py-4">Đã hết mảnh ở khay phải</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* ============================================================ */
+                /* MODE B: STANDARD GRID MATCHING / BUCKET LAYOUT WHEN NO CENTER IMAGE */
+                /* ============================================================ */
+                <>
+                  {/* SECTION A: SOURCE DOCK (Khay hình ảnh cần kéo) */}
               <div className="p-4 sm:p-5 rounded-3xl bg-slate-800/80 border-2 border-slate-700/80 shadow-lg space-y-2">
                 <div className="flex items-center justify-between text-xs font-black text-amber-300 uppercase tracking-wider">
                   <div className="flex items-center gap-1.5">
@@ -1279,6 +1559,29 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* CENTRAL BACKGROUND ILLUSTRATION CANVAS (If centerImage is provided) */}
+              {activeGame.centerImage && (
+                <div className="relative mb-6 p-5 sm:p-7 rounded-3xl bg-slate-900/95 border-4 border-teal-400/80 ring-4 ring-teal-400/20 shadow-2xl flex flex-col items-center justify-center text-center space-y-4 overflow-hidden">
+                  <div className="flex items-center gap-2 text-teal-300 font-black text-xs sm:text-sm uppercase tracking-wider bg-teal-950/80 px-4 py-1.5 rounded-full border border-teal-400/40 shadow-sm">
+                    <Sparkles className="w-4 h-4 text-teal-400 animate-spin" />
+                    <span>{activeGame.centerImageCaption || 'Mô hình trung tâm - Kéo mảnh ghép đính lên'}</span>
+                  </div>
+
+                  {/* Big Central Image */}
+                  <div className="relative max-w-xl w-full max-h-96 rounded-2xl overflow-hidden bg-slate-950/90 border-2 border-slate-700/80 p-3 shadow-inner flex items-center justify-center">
+                    <img
+                      src={activeGame.centerImage}
+                      alt={activeGame.centerImageCaption || activeGame.title}
+                      className="max-h-80 w-auto object-contain rounded-xl drop-shadow-2xl transition-all hover:scale-102"
+                    />
+                  </div>
+
+                  <p className="text-xs text-teal-200/90 font-bold bg-slate-950/70 px-4 py-1.5 rounded-full border border-teal-500/30">
+                    💡 Chọn các mảnh ghép từ khay phía trên và kéo thả đính vào các vị trí đáp án bên dưới!
+                  </p>
+                </div>
+              )}
 
               {/* SECTION B: TARGET DROP ZONES */}
               {activeGame.mode === 'matching' ? (
@@ -1516,6 +1819,8 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                     })}
                   </div>
                 </div>
+              )}
+                </>
               )}
             </div>
 
@@ -1796,16 +2101,14 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
 
-                      {!game.isPreset && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteGame(game.id)}
-                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-all cursor-pointer"
-                          title="Xóa trò chơi này"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGame(game.id)}
+                        className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-all cursor-pointer"
+                        title="Xóa trò chơi này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
 
                     <button
@@ -1861,54 +2164,6 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
 
             {/* Modal Body: Scrollable Form */}
             <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-slate-800">
-              {/* Quick Template Starters */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 border border-orange-200/90 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-orange-950 uppercase flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-orange-600" />
-                    Mẫu gợi ý tạo nhanh trò chơi kéo thả:
-                  </span>
-                  <span className="text-[10px] text-orange-700 font-bold hidden sm:inline">Nhấn để nạp mẫu & tùy chỉnh theo ý</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => applyTemplateToEditor('math')}
-                    className="px-2.5 py-1.5 rounded-xl bg-white border border-orange-200 hover:border-orange-400 hover:bg-orange-100/60 text-xs font-bold text-slate-800 cursor-pointer transition-all shadow-2xs"
-                  >
-                    📐 Toán: Hình học & Khối
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyTemplateToEditor('vietnamese')}
-                    className="px-2.5 py-1.5 rounded-xl bg-white border border-orange-200 hover:border-orange-400 hover:bg-orange-100/60 text-xs font-bold text-slate-800 cursor-pointer transition-all shadow-2xs"
-                  >
-                    📖 Tiếng Việt: Từ chỉ Sự vật & Hoạt động
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyTemplateToEditor('english')}
-                    className="px-2.5 py-1.5 rounded-xl bg-white border border-orange-200 hover:border-orange-400 hover:bg-orange-100/60 text-xs font-bold text-slate-800 cursor-pointer transition-all shadow-2xs"
-                  >
-                    🇬🇧 Tiếng Anh: Animals & Fruits
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyTemplateToEditor('science')}
-                    className="px-2.5 py-1.5 rounded-xl bg-white border border-orange-200 hover:border-orange-400 hover:bg-orange-100/60 text-xs font-bold text-slate-800 cursor-pointer transition-all shadow-2xs"
-                  >
-                    🌿 TNXH: Động vật đẻ con & Đẻ trứng
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyTemplateToEditor('cs')}
-                    className="px-2.5 py-1.5 rounded-xl bg-white border border-orange-200 hover:border-orange-400 hover:bg-orange-100/60 text-xs font-bold text-slate-800 cursor-pointer transition-all shadow-2xs"
-                  >
-                    💻 Tin học: Thiết bị Vào (Input) & Ra (Output)
-                  </button>
-                </div>
-              </div>
-
               {/* Form Row 1: Title & Description */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -2011,7 +2266,184 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                 </div>
               </div>
 
-              {/* If Sorting Mode: Manage Target Zones (Categories) */}
+              {/* Central Background Image Section (Hình nền trung tâm / Đính mảnh ghép) */}
+              <div className="p-4 rounded-2xl bg-teal-50/80 border-2 border-teal-200/90 space-y-3 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-black text-teal-950 uppercase flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-teal-600" />
+                      <span>Hình Ảnh Minh Họa Trung Tâm / Hình Nền Đính Mảnh Ghép (Tùy chọn)</span>
+                    </h4>
+                    <p className="text-[11px] text-teal-700">
+                      Tải lên hình cái cây, sơ đồ cơ thể, mặt đồng hồ... để học sinh kéo thả các mảnh ghép (lá, hoa, quả...) đính lên!
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="file"
+                      ref={centerFileUploadRef}
+                      accept="image/*"
+                      onChange={handleUploadCenterImage}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => centerFileUploadRef.current?.click()}
+                      className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs flex items-center gap-1 cursor-pointer shadow-xs transition-all active:scale-95"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Tải ảnh nền lên</span>
+                    </button>
+
+                    {editingGame.centerImage && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingGame({ ...editingGame, centerImage: undefined, centerImageCaption: undefined })}
+                        className="px-2.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Xóa ảnh nền</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick Preset Center Images */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-[11px] font-bold text-teal-900">Mẫu có sẵn:</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingGame({ ...editingGame, centerImage: PRESET_CENTER_IMAGES.tree, centerImageCaption: '🌳 Cây xanh & Các bộ phận của cây' })}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-teal-300 text-teal-900 font-bold text-xs hover:bg-teal-100 cursor-pointer shadow-2xs transition-all"
+                  >
+                    🌳 Mô hình Cây xanh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingGame({ ...editingGame, centerImage: PRESET_CENTER_IMAGES.clock, centerImageCaption: '⏰ Mặt đồng hồ & Các kim số' })}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-teal-300 text-teal-900 font-bold text-xs hover:bg-teal-100 cursor-pointer shadow-2xs transition-all"
+                  >
+                    ⏰ Mặt đồng hồ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingGame({ ...editingGame, centerImage: PRESET_CENTER_IMAGES.body, centerImageCaption: '👦 Sơ đồ cơ thể người' })}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-teal-300 text-teal-900 font-bold text-xs hover:bg-teal-100 cursor-pointer shadow-2xs transition-all"
+                  >
+                    👦 Cơ thể người
+                  </button>
+                </div>
+
+                {/* Center Image Preview & Caption */}
+                {editingGame.centerImage && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row items-center gap-4 p-3 bg-white rounded-xl border border-teal-200">
+                      <img
+                        src={editingGame.centerImage}
+                        alt="Central illustration background"
+                        className="w-28 h-28 object-contain rounded-lg border border-slate-200 bg-slate-50 p-1 shrink-0 shadow-xs"
+                      />
+                      <div className="flex-1 space-y-1.5 w-full">
+                        <label className="text-xs font-bold text-slate-700 block">Tên / Chú thích cho hình minh họa trung tâm</label>
+                        <input
+                          type="text"
+                          value={editingGame.centerImageCaption || ''}
+                          onChange={(e) => setEditingGame({ ...editingGame, centerImageCaption: e.target.value })}
+                          placeholder="VD: Cây xanh & Các bộ phận của cây..."
+                          className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-xs text-slate-800 focus:outline-hidden"
+                        />
+                        <p className="text-[11px] text-slate-500">
+                          Hình này sẽ hiển thị ở trung tâm. Các thẻ mảnh ghép (lá, hoa, quả...) sẽ xuất hiện ở 2 bên khay để học sinh kéo đính lên!
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Interactive Click-to-Position Hotspot Canvas */}
+                    <div className="p-3 bg-white rounded-xl border border-teal-200 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 pb-2">
+                        <span className="text-xs font-black text-teal-900 uppercase flex items-center gap-1.5">
+                          <Move className="w-3.5 h-3.5 text-teal-600" />
+                          <span>📍 Đặt vị trí đáp án đính trên hình nền trung tâm:</span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-slate-600">Đang đặt cho câu:</span>
+                          <select
+                            value={Math.min(activeHotspotIndex, Math.max(0, editingGame.pairs.length - 1))}
+                            onChange={(e) => setActiveHotspotIndex(Number(e.target.value))}
+                            className="px-2.5 py-1 rounded-lg border border-slate-300 font-bold text-xs bg-amber-50 text-amber-900 focus:outline-hidden"
+                          >
+                            {editingGame.pairs.map((p, idx) => (
+                              <option key={p.id} value={idx}>
+                                #{idx + 1}: {p.caption || p.targetLabel || `Câu ${idx + 1}`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-teal-800 font-medium">
+                        👉 **Thầy/Cô bấm trực tiếp lên bất kỳ điểm nào trên bức ảnh bên dưới** để đặt ô đáp án cho câu <strong>#{activeHotspotIndex + 1} ({editingGame.pairs[activeHotspotIndex]?.caption || editingGame.pairs[activeHotspotIndex]?.targetLabel})</strong>!
+                      </p>
+
+                      {/* Clickable Canvas Box (Spacious & Clear) */}
+                      <div
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickX = e.clientX - rect.left;
+                          const clickY = e.clientY - rect.top;
+                          const xPercent = Math.round((clickX / rect.width) * 100);
+                          const yPercent = Math.round((clickY / rect.height) * 100);
+
+                          const updatedPairs = [...editingGame.pairs];
+                          if (updatedPairs[activeHotspotIndex]) {
+                            updatedPairs[activeHotspotIndex] = {
+                              ...updatedPairs[activeHotspotIndex],
+                              xPercent,
+                              yPercent
+                            };
+                            setEditingGame({ ...editingGame, pairs: updatedPairs });
+                          }
+                        }}
+                        className="relative max-w-4xl mx-auto w-full min-h-[400px] sm:min-h-[480px] rounded-2xl overflow-hidden bg-slate-950 border-2 border-dashed border-teal-400 cursor-crosshair group shadow-inner flex items-center justify-center p-3 select-none"
+                        title="Bấm lên vị trí mong muốn trên hình để đặt điểm thả đáp án!"
+                      >
+                        <img
+                          src={editingGame.centerImage}
+                          alt="Central illustration background"
+                          className="max-h-[480px] w-full object-contain pointer-events-none"
+                        />
+
+                        {/* Render Hotspot Pins for all pair questions */}
+                        {editingGame.pairs.map((p, idx) => {
+                          const isSelectedPair = idx === activeHotspotIndex;
+                          const posX = p.xPercent ?? Math.min(85, Math.max(15, 20 + idx * 18));
+                          const posY = p.yPercent ?? Math.min(85, Math.max(15, 30 + (idx % 2) * 35));
+
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveHotspotIndex(idx);
+                              }}
+                              style={{ left: `${posX}%`, top: `${posY}%` }}
+                              className={`absolute transform -translate-x-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xl border-2 text-[11px] font-black shadow-lg cursor-pointer transition-all flex items-center gap-1 ${
+                                isSelectedPair
+                                  ? 'bg-amber-400 border-white text-slate-950 scale-110 ring-4 ring-amber-400/50 z-20 animate-bounce'
+                                  : 'bg-slate-900/90 border-teal-400 text-teal-200 hover:scale-105 z-10'
+                              }`}
+                            >
+                              <span>#{idx + 1}</span>
+                              <span>{p.caption || p.targetLabel}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               {editingGame.mode === 'sorting' && (
                 <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 space-y-3">
                   <div className="flex items-center justify-between">
@@ -2252,19 +2684,17 @@ export const DragDropTab: React.FC<DragDropTabProps> = ({
                       </div>
 
                       {/* Delete Item button */}
-                      {editingGame.pairs.length > 2 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = editingGame.pairs.filter((_, i) => i !== pIdx);
-                            setEditingGame({ ...editingGame, pairs: updated });
-                          }}
-                          className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 cursor-pointer shrink-0"
-                          title="Xóa cặp này"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = editingGame.pairs.filter((_, i) => i !== pIdx);
+                          setEditingGame({ ...editingGame, pairs: updated });
+                        }}
+                        className="p-2 rounded-xl text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all cursor-pointer shrink-0"
+                        title="Xóa câu hỏi / phần đã chọn"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
                 </div>

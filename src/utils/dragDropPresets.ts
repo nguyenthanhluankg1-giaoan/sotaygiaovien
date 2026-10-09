@@ -77,7 +77,34 @@ export const EDUCATIONAL_EMOJI_LIBRARY: EducationalEmojiItem[] = [
   { id: 'e-school', emoji: '🏫', name: 'Ngôi trường', category: 'Phương tiện & Đời sống' }
 ];
 
+export const PRESET_CENTER_IMAGES = {
+  tree: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"><rect width="500" height="500" fill="%23f0fdf4" rx="30"/><path d="M220 460 C220 340, 230 280, 210 240 C190 200, 160 180, 140 170" stroke="%2378350f" stroke-width="28" fill="none" stroke-linecap="round"/><path d="M280 460 C280 340, 270 280, 290 230 C310 180, 340 160, 360 150" stroke="%2378350f" stroke-width="24" fill="none" stroke-linecap="round"/><path d="M250 460 L250 220" stroke="%2392400e" stroke-width="40" stroke-linecap="round"/><circle cx="250" cy="160" r="140" fill="%2322c55e" opacity="0.9"/><circle cx="170" cy="180" r="100" fill="%2316a34a" opacity="0.9"/><circle cx="330" cy="180" r="100" fill="%2315803d" opacity="0.9"/><circle cx="250" cy="120" r="90" fill="%234ade80" opacity="0.95"/><path d="M120 460 Q250 420 380 460" stroke="%23166534" stroke-width="12" fill="none"/></svg>`,
+  clock: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"><rect width="500" height="500" fill="%23f0f9ff" rx="30"/><circle cx="250" cy="250" r="180" fill="white" stroke="%230284c7" stroke-width="20"/><circle cx="250" cy="250" r="12" fill="%230f172a"/><line x1="250" y1="250" x2="250" y2="120" stroke="%230f172a" stroke-width="12" stroke-linecap="round"/><line x1="250" y1="250" x2="340" y2="250" stroke="%23e11d48" stroke-width="8" stroke-linecap="round"/><text x="250" y="110" font-size="32" font-weight="bold" text-anchor="middle" fill="%230f172a">12</text><text x="390" y="260" font-size="32" font-weight="bold" text-anchor="middle" fill="%230f172a">3</text><text x="250" y="410" font-size="32" font-weight="bold" text-anchor="middle" fill="%230f172a">6</text><text x="110" y="260" font-size="32" font-weight="bold" text-anchor="middle" fill="%230f172a">9</text></svg>`,
+  body: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"><rect width="500" height="500" fill="%23fff1f2" rx="30"/><circle cx="250" cy="110" r="55" fill="%23fde047" stroke="%23eab308" stroke-width="6"/><rect x="230" y="165" width="40" height="30" fill="%23fde047"/><rect x="200" y="195" width="100" height="150" rx="20" fill="%2338bdf8"/><rect x="150" y="200" width="40" height="110" rx="15" fill="%23fde047"/><rect x="310" y="200" width="40" height="110" rx="15" fill="%23fde047"/><rect x="210" y="340" width="35" height="120" rx="12" fill="%231e3a8a"/><rect x="255" y="340" width="35" height="120" rx="12" fill="%231e3a8a"/></svg>`
+};
+
 export const DEFAULT_DRAG_DROP_GAMES: DragDropGameItem[] = [
+  {
+    id: 'game-tree-assembly',
+    title: 'Ghép Các Bộ Phận Lên Cây Xanh (Lá, Hoa, Quả, Thân, Rễ)',
+    description: 'Tự nhiên & Xã hội: Kéo thả các mảnh ghép tương ứng gắn lên mô hình cây xanh trung tâm.',
+    subject: 'Tự nhiên & Xã hội',
+    grade: 'Khối 2',
+    mode: 'matching',
+    centerImage: PRESET_CENTER_IMAGES.tree,
+    centerImageCaption: '🌳 Cây xanh & Các bộ phận của cây',
+    timerSeconds: 120,
+    rewardFlowers: 5,
+    createdAt: '2026-10-08T00:00:00Z',
+    isPreset: true,
+    pairs: [
+      { id: 'p-tree-1', image: '🍃', imageType: 'emoji', caption: 'Chiếc lá xanh', targetLabel: 'Lá cây (Nơi quang hợp)', hint: 'Có màu xanh, quang hợp dưới ánh nắng', xPercent: 30, yPercent: 25 },
+      { id: 'p-tree-2', image: '🌸', imageType: 'emoji', caption: 'Bông hoa hồng', targetLabel: 'Bông hoa (Cơ quan sinh sản)', hint: 'Màu sắc sặc sỡ để thu hút ong bướm', xPercent: 70, yPercent: 30 },
+      { id: 'p-tree-3', image: '🍎', imageType: 'emoji', caption: 'Quả Táo chín', targetLabel: 'Quả chín (Chứa hạt)', hint: 'Ngọt ngào, chứa hạt bên trong', xPercent: 48, yPercent: 42 },
+      { id: 'p-tree-4', image: '🪵', imageType: 'emoji', caption: 'Thân cây gỗ', targetLabel: 'Thân cây (Nâng đỡ cành lá)', hint: 'Chắc khỏe, dẫn chất dinh dưỡng lên tán lá', xPercent: 50, yPercent: 70 },
+      { id: 'p-tree-5', image: '🪴', imageType: 'emoji', caption: 'Rễ cây sâu', targetLabel: 'Rễ cây (Hút nước & khoáng chất)', hint: 'Bám sâu vào lòng đất để giữ cây vững chắc', xPercent: 50, yPercent: 90 }
+    ]
+  },
   {
     id: 'game-math-shapes',
     title: 'Nối Hình Học & Hình Khối Không Gian',

@@ -224,6 +224,8 @@ export interface DragDropPair {
   targetLabel: string; // Correct answer text or target slot name
   targetGroupId?: string; // Target category/bucket ID if mode is 'sorting'
   hint?: string; // Optional hint for students
+  xPercent?: number; // 0-100% position on central background image
+  yPercent?: number; // 0-100% position on central background image
 }
 
 export interface DragDropTargetZone {
@@ -240,6 +242,8 @@ export interface DragDropGameItem {
   subject: string; // 'Toán', 'Tiếng Việt', 'Tiếng Anh', 'Tự nhiên & Xã hội', 'Khoa học', 'Tin học'...
   grade: string; // 'Khối 1', 'Khối 2', 'Khối 3', 'Khối 4', 'Khối 5', 'Tất cả'
   mode: 'matching' | 'sorting'; // 'matching': 1-to-1 matching; 'sorting': categorize into buckets
+  centerImage?: string; // Central background illustration image (e.g. Tree, Clock, Human Body, Solar System)
+  centerImageCaption?: string; // Optional caption for central background image
   timerSeconds?: number; // 0 = no timer
   pairs: DragDropPair[];
   targetZones?: DragDropTargetZone[];
