@@ -56,7 +56,7 @@ import {
 
 interface ReportsModuleProps {
   state: AppState;
-  onUpdateState: (updater: (prev: AppState) => AppState) => void;
+  onUpdateState: (updater: (prev: AppState) => AppState, immediateSave?: boolean) => void;
   currentUser?: UserAccount | null;
 }
 
@@ -537,7 +537,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
           ...prev,
           urgentReports: remaining
         };
-      });
+      }, true);
 
       const remainingReports = (state.urgentReports || []).filter((r) => r.id !== targetId);
       if (selectedReportId === targetId) {
@@ -570,7 +570,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
           ...prev,
           urgentReports: remaining
         };
-      });
+      }, true);
 
       const remainingReports = (state.urgentReports || []).filter(
         (r) => !selectedReportIdsForBulk.includes(r.id)
@@ -597,18 +597,24 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     setIsDeleting(true);
 
     try {
-      const res = await deleteReportRowFromFirestore(currentReport.id, rowToDelete.rowId);
-      if (res.success && res.report) {
-        onUpdateState((prev) => ({
-          ...prev,
-          urgentReports: (prev.urgentReports || []).map((r) =>
-            r.id === res.report!.id ? res.report! : r
-          )
-        }));
-        showToast(`Đã xóa dòng "${rowToDelete.label}" thành công!`);
-      } else {
-        alert(res.error || 'Không thể xóa dòng này');
-      }
+      const updatedRows = (currentReport.rows || []).filter((r) => r.id !== rowToDelete.rowId);
+      const updatedReport: UrgentReportItem = {
+        ...currentReport,
+        rows: updatedRows,
+        submissionsCount: updatedRows.filter((r) => r._isComplete).length,
+        updatedAt: new Date().toISOString()
+      };
+
+      await saveUrgentReportToFirestore(updatedReport);
+
+      onUpdateState((prev) => ({
+        ...prev,
+        urgentReports: (prev.urgentReports || []).map((r) =>
+          r.id === updatedReport.id ? updatedReport : r
+        )
+      }), true);
+
+      showToast(`Đã xóa dòng "${rowToDelete.label}" thành công!`);
     } catch (err: any) {
       alert('Lỗi xóa dòng: ' + (err?.message || 'Lỗi'));
     } finally {

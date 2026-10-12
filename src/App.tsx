@@ -164,12 +164,12 @@ export default function App() {
               return Array.from(map.values());
             };
 
-            const mergedPersonalMeetings = mergeById(cloudState.personalMeetings || [], prev.personalMeetings || []);
-            const mergedDepartmentMeetings = mergeById(cloudState.departmentMeetings || [], prev.departmentMeetings || []);
-            const mergedMeetingFolders = mergeById(cloudState.meetingFolders || [], prev.meetingFolders || []);
-            const mergedDragDropGames = mergeById(cloudState.dragDropGames || [], prev.dragDropGames || []);
-            const mergedWorksheets = mergeById(cloudState.worksheets || [], prev.worksheets || []);
-            const mergedUrgentReports = mergeById(cloudState.urgentReports || [], prev.urgentReports || []);
+            const mergedPersonalMeetings = cloudState.personalMeetings !== undefined ? cloudState.personalMeetings : (prev.personalMeetings || []);
+            const mergedDepartmentMeetings = cloudState.departmentMeetings !== undefined ? cloudState.departmentMeetings : (prev.departmentMeetings || []);
+            const mergedMeetingFolders = cloudState.meetingFolders !== undefined ? cloudState.meetingFolders : (prev.meetingFolders || []);
+            const mergedDragDropGames = cloudState.dragDropGames !== undefined ? cloudState.dragDropGames : (prev.dragDropGames || []);
+            const mergedWorksheets = cloudState.worksheets !== undefined ? cloudState.worksheets : (prev.worksheets || []);
+            const mergedUrgentReports = cloudState.urgentReports !== undefined ? cloudState.urgentReports : (prev.urgentReports || []);
 
             const mergedClasses = (cloudState.classes && cloudState.classes.length > 0) ? cloudState.classes : (prev.classes || []);
             const mergedStudents = (cloudState.students && cloudState.students.length > 0) ? cloudState.students : (prev.students || []);
@@ -179,12 +179,12 @@ export default function App() {
               ...cloudState,
               classes: mergedClasses,
               students: mergedStudents,
-              personalMeetings: mergedPersonalMeetings.length > 0 ? mergedPersonalMeetings : (prev.personalMeetings || []),
-              departmentMeetings: mergedDepartmentMeetings.length > 0 ? mergedDepartmentMeetings : (prev.departmentMeetings || []),
-              meetingFolders: mergedMeetingFolders.length > 0 ? mergedMeetingFolders : (prev.meetingFolders || []),
+              personalMeetings: mergedPersonalMeetings,
+              departmentMeetings: mergedDepartmentMeetings,
+              meetingFolders: mergedMeetingFolders,
               dragDropGames: mergedDragDropGames,
               worksheets: mergedWorksheets,
-              urgentReports: mergedUrgentReports.length > 0 ? mergedUrgentReports : (prev.urgentReports || [])
+              urgentReports: mergedUrgentReports
             };
 
             saveStoredState(savedUser, reconciledState);
@@ -342,8 +342,20 @@ export default function App() {
     await saveSystemConfig({ schoolLogo: logo });
   };
 
-  const handleUpdateState = (updater: (prev: AppState) => AppState) => {
-    setState((prev) => updater(prev));
+  const handleUpdateState = (updater: (prev: AppState) => AppState, immediateSave: boolean = false) => {
+    setState((prev) => {
+      const next = updater(prev);
+      saveStoredState(currentUser, next);
+      if (immediateSave) {
+        const wsKey = getUserWorkspaceKey(currentUser);
+        saveAppStateToFirestore(wsKey, next, {
+          userId: currentUser?.id || 'guest',
+          teacherName: currentUser?.name || 'Giáo viên',
+          role: currentUser?.role || 'guest'
+        }).catch(console.warn);
+      }
+      return next;
+    });
   };
 
   const handleResetState = () => {

@@ -1100,6 +1100,7 @@ export async function deleteUrgentReportFromFirestore(reportId: string): Promise
   const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
   try {
     localStorage.removeItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
+    localStorage.removeItem(`${URGENT_REPORT_CACHE_PREFIX}${docKey}`);
   } catch (e) {}
 
   if (shouldSkipFirestoreWrite()) {
