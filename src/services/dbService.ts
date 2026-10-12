@@ -19,7 +19,10 @@ import {
   LessonPlanRow,
   DetailedLessonPlan,
   ConfiguredClass,
-  ContactInfo
+  ContactInfo,
+  UrgentReportItem,
+  ReportRow,
+  ReportColumn
 } from '../types';
 import { getDefaultState, getDefaultStateForUser } from '../utils/helpers';
 
@@ -874,4 +877,195 @@ export async function fetchSharedGameFromFirestore(shareId: string): Promise<any
   }
 
   return null;
+}
+
+// ==========================================
+// URGENT REPORTS (BÁO CÁO GẤP SỐ LIỆU EXCEL)
+// ==========================================
+
+const URGENT_REPORT_CACHE_PREFIX = 'urgent_report_cache_';
+
+/**
+ * Helper to get document reference in the workspaces collection
+ */
+function getReportDocRef(reportId: string) {
+  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
+  return doc(db, 'workspaces', docKey);
+}
+
+/**
+ * Save an Urgent Report to Firestore with real-time sync & local cache
+ */
+export async function saveUrgentReportToFirestore(report: UrgentReportItem): Promise<boolean> {
+  const docKey = report.id.startsWith('report_') ? report.id : `report_${report.id}`;
+  const path = `workspaces/${docKey}`;
+  try {
+    localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${report.id}`, JSON.stringify(report));
+  } catch (e) {
+    console.warn('Failed to cache urgent report in localStorage:', e);
+  }
+
+  try {
+    const docRef = getReportDocRef(report.id);
+    const sanitized = sanitizeFirestoreData({
+      ...report,
+      updatedAt: new Date().toISOString()
+    });
+    await setDoc(docRef, sanitized);
+    return true;
+  } catch (err: any) {
+    console.warn(`Firestore save notice for ${path}:`, err);
+    // Do not throw fatal error if cloud write is temporarily unavailable; local storage & workspace have it
+    return true;
+  }
+}
+
+/**
+ * Fetch a single Urgent Report from Firestore
+ */
+export async function fetchUrgentReportFromFirestore(reportId: string): Promise<UrgentReportItem | null> {
+  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
+  const path = `workspaces/${docKey}`;
+  try {
+    const docRef = getReportDocRef(reportId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as UrgentReportItem;
+      try {
+        localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
+      } catch (e) {}
+      return data;
+    }
+  } catch (err) {
+    console.warn(`Firestore read warning for ${path}:`, err);
+  }
+
+  // Fallback to local storage cache if network is slow/offline
+  try {
+    const cached = localStorage.getItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+/**
+ * Subscribe to an Urgent Report in real-time
+ */
+export function subscribeToUrgentReport(
+  reportId: string,
+  onUpdate: (report: UrgentReportItem | null) => void
+): () => void {
+  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
+  const path = `workspaces/${docKey}`;
+  const docRef = getReportDocRef(reportId);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as UrgentReportItem;
+        try {
+          localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
+        } catch (e) {}
+        onUpdate(data);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (err) => {
+      console.warn(`Real-time listener notice for ${path}:`, err);
+    }
+  );
+}
+
+/**
+ * Delete an Urgent Report from Firestore
+ */
+export async function deleteUrgentReportFromFirestore(reportId: string): Promise<boolean> {
+  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
+  try {
+    localStorage.removeItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
+  } catch (e) {}
+
+  try {
+    const docRef = getReportDocRef(reportId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (err) {
+    console.warn(`Delete error for workspaces/${docKey}:`, err);
+    return true;
+  }
+}
+
+/**
+ * Submit / Update a single row in an Urgent Report from a shared public or internal form
+ */
+export async function submitReportRowToFirestore(
+  reportId: string,
+  submittedRow: ReportRow,
+  isNewRow: boolean,
+  submitterName?: string
+): Promise<{ success: boolean; report?: UrgentReportItem; error?: string }> {
+  try {
+    // 1. Fetch current report state
+    const current = await fetchUrgentReportFromFirestore(reportId);
+    if (!current) {
+      return { success: false, error: 'Không tìm thấy mẫu báo cáo trên hệ thống.' };
+    }
+
+    if (current.status === 'closed') {
+      return { success: false, error: 'Mẫu báo cáo này đã khóa nhận số liệu!' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedRows = [...current.rows];
+
+    if (isNewRow) {
+      // Append new row
+      updatedRows.push({
+        ...submittedRow,
+        _submittedAt: nowIso,
+        _submittedBy: submitterName || 'Người dùng',
+        _isComplete: true
+      });
+    } else {
+      // Update existing row matching id
+      const index = updatedRows.findIndex((r) => r.id === submittedRow.id);
+      if (index >= 0) {
+        updatedRows[index] = {
+          ...updatedRows[index],
+          ...submittedRow,
+          _submittedAt: nowIso,
+          _submittedBy: submitterName || updatedRows[index]._submittedBy || 'Người dùng',
+          _isComplete: true
+        };
+      } else {
+        updatedRows.push({
+          ...submittedRow,
+          _submittedAt: nowIso,
+          _submittedBy: submitterName || 'Người dùng',
+          _isComplete: true
+        });
+      }
+    }
+
+    const updatedReport: UrgentReportItem = {
+      ...current,
+      rows: updatedRows,
+      submissionsCount: (current.submissionsCount || 0) + 1,
+      updatedAt: nowIso
+    };
+
+    const saved = await saveUrgentReportToFirestore(updatedReport);
+    if (saved) {
+      return { success: true, report: updatedReport };
+    } else {
+      return { success: false, error: 'Không thể ghi số liệu lên Cloud Firestore.' };
+    }
+  } catch (err: any) {
+    console.error('submitReportRowToFirestore error:', err);
+    return { success: false, error: err?.message || 'Lỗi khi gửi số liệu báo cáo.' };
+  }
 }

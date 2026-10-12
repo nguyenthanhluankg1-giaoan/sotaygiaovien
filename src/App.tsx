@@ -57,6 +57,8 @@ import { DragDropTab } from './components/tabs/DragDropTab';
 import { WorksheetsTab } from './components/tabs/WorksheetsTab';
 import { KhdhModule } from './components/KhdhModule';
 import { MeetingsModule } from './components/MeetingsModule';
+import { ReportsModule } from './components/ReportsModule';
+import { SharedReportFormView } from './components/SharedReportFormView';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getSavedSessionUser());
@@ -72,6 +74,7 @@ export default function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [contactInfo, setContactInfo] = useState<ContactInfo>(() => getLocalCachedContactInfo());
   const [userApiKey, setUserApiKey] = useState<string>(() => getStoredApiKey(getSavedSessionUser()));
+  const [sharedReportId, setSharedReportId] = useState<string | null>(null);
 
   // References to guarantee no race conditions across browsers
   const cloudLoadedUserRef = useRef<string | null>(null);
@@ -158,6 +161,7 @@ export default function App() {
             const mergedMeetingFolders = mergeById(cloudState.meetingFolders || [], prev.meetingFolders || []);
             const mergedDragDropGames = mergeById(cloudState.dragDropGames || [], prev.dragDropGames || []);
             const mergedWorksheets = mergeById(cloudState.worksheets || [], prev.worksheets || []);
+            const mergedUrgentReports = mergeById(cloudState.urgentReports || [], prev.urgentReports || []);
 
             const mergedClasses = (cloudState.classes && cloudState.classes.length > 0) ? cloudState.classes : (prev.classes || []);
             const mergedStudents = (cloudState.students && cloudState.students.length > 0) ? cloudState.students : (prev.students || []);
@@ -171,7 +175,8 @@ export default function App() {
               departmentMeetings: mergedDepartmentMeetings.length > 0 ? mergedDepartmentMeetings : (prev.departmentMeetings || []),
               meetingFolders: mergedMeetingFolders.length > 0 ? mergedMeetingFolders : (prev.meetingFolders || []),
               dragDropGames: mergedDragDropGames,
-              worksheets: mergedWorksheets
+              worksheets: mergedWorksheets,
+              urgentReports: mergedUrgentReports.length > 0 ? mergedUrgentReports : (prev.urgentReports || [])
             };
 
             saveStoredState(savedUser, reconciledState);
@@ -192,14 +197,19 @@ export default function App() {
 
     initializeFromCloud();
 
-    // Check if user accessed via shared game link (URL search parameters)
+    // Check if user accessed via shared game link or shared report form link (URL search parameters)
     try {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab') || params.get('page');
       const shareIdParam = params.get('shareId') || params.get('gameId');
       const gameParam = params.get('game');
+      const reportIdParam = params.get('reportId') || params.get('report');
 
-      if (tabParam === 'dragdrop' || shareIdParam || gameParam === 'dragdrop') {
+      if (reportIdParam) {
+        setSharedReportId(reportIdParam);
+      } else if (tabParam === 'reports') {
+        setState((prev) => ({ ...prev, currentPage: 'reports' }));
+      } else if (tabParam === 'dragdrop' || shareIdParam || gameParam === 'dragdrop') {
         setState((prev) => ({ ...prev, currentPage: 'dragdrop' }));
       }
     } catch (e) {
@@ -566,6 +576,11 @@ export default function App() {
           title: 'Thư Mục Sổ Họp & Biên Bản Tổ Khối',
           subtitle: 'Sổ họp cá nhân và quản lý biên bản họp tổ khối chuyên môn'
         };
+      case 'reports':
+        return {
+          title: 'Báo Cáo Gấp Số Liệu Bằng Excel & Form Trực Tuyến',
+          subtitle: 'Tải file Excel mẫu lên, hiển thị dữ liệu bảng tính, tự động tạo Form và chia sẻ thu thập số liệu siêu tốc'
+        };
       default:
         return {
           title: 'Lớp Học Thông Minh',
@@ -577,6 +592,22 @@ export default function App() {
   const pageInfo = getPageInfo();
   const currentUserExpInfo = getAccountExpirationInfo(currentUser);
   const isCurrentUserExpired = currentUser?.role !== 'admin' && currentUserExpInfo.isExpired;
+
+  // If accessed directly via shared report form link or QR code
+  if (sharedReportId) {
+    return (
+      <SharedReportFormView
+        reportId={sharedReportId}
+        currentUser={currentUser}
+        onBackToApp={() => {
+          setSharedReportId(null);
+          try {
+            window.history.replaceState({}, '', window.location.pathname);
+          } catch {}
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-br from-teal-50/70 via-emerald-50/40 to-teal-100/30 text-slate-800 flex flex-col lg:flex-row relative">
@@ -697,7 +728,7 @@ export default function App() {
         />
 
         {/* Thanh chọn công cụ Quản lý lớp học, Trò chơi hoặc Sổ họp ở bên phải */}
-        {state.currentPage !== 'khdh' && (
+        {state.currentPage !== 'khdh' && state.currentPage !== 'reports' && (
           ['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(state.currentPage) ? (
             <GamesNavBar
               currentPage={state.currentPage}
@@ -884,6 +915,14 @@ export default function App() {
               onUpdateState={handleUpdateState}
               currentUser={currentUser}
               initialTab={state.currentPage === 'department_meeting' ? 'department' : 'personal'}
+            />
+          )}
+
+          {state.currentPage === 'reports' && (
+            <ReportsModule
+              state={state}
+              onUpdateState={handleUpdateState}
+              currentUser={currentUser}
             />
           )}
         </main>

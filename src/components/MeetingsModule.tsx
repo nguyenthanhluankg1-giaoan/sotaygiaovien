@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   BookOpen,
   ClipboardList,
+  CalendarDays,
   Plus,
   Search,
   Calendar,
@@ -46,12 +47,23 @@ import {
 } from 'lucide-react';
 import { AppState, PersonalMeetingItem, DepartmentMeetingItem, MeetingFolder, UserAccount } from '../types';
 import { uid, today, nowTime } from '../utils/helpers';
+import {
+  exportPersonalMeetingToDocx,
+  exportDepartmentMeetingToDocx,
+  exportPersonalMeetingToWordHtml,
+  exportDepartmentMeetingToWordHtml,
+  printAdministrativeMeeting,
+  formatAdministrativeHtmlText,
+  normalizeAdministrativeText
+} from '../utils/meetingDocxExport';
+import { MeetingScheduleTab } from './MeetingScheduleTab';
 
 interface MeetingsModuleProps {
   state: AppState;
   onUpdateState: (updater: (prev: AppState) => AppState) => void;
   currentUser?: UserAccount | null;
-  initialTab?: 'personal' | 'department';
+  initialTab?: 'personal' | 'department' | 'schedule';
+  onNavigate?: (page: string) => void;
 }
 
 const CATEGORY_OPTIONS = [
@@ -214,9 +226,10 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
   state,
   onUpdateState,
   currentUser,
-  initialTab = 'personal'
+  initialTab = 'personal',
+  onNavigate
 }) => {
-  const [activeTab, setActiveTab] = useState<'personal' | 'department'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'personal' | 'department' | 'schedule'>(initialTab);
 
   React.useEffect(() => {
     if (initialTab) {
@@ -970,375 +983,53 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Print Document
+  // Print Administrative Document cleanly
+  const handlePrintPersonal = (item: PersonalMeetingItem) => {
+    printAdministrativeMeeting('personal', item, currentUser);
+  };
+
+  const handlePrintDepartment = (item: DepartmentMeetingItem) => {
+    printAdministrativeMeeting('department', item, currentUser);
+  };
+
   const handlePrint = () => {
-    window.print();
+    if (viewingDepartment) {
+      handlePrintDepartment(viewingDepartment);
+    } else if (viewingPersonal) {
+      handlePrintPersonal(viewingPersonal);
+    } else {
+      window.print();
+    }
   };
 
-  // Export Personal Meeting to Word file formatted according to Nghị định 30/2020/NĐ-CP
+  // Export Personal Meeting to Word (.docx) formatted according to Nghị định 30/2020/NĐ-CP
+  const handleExportPersonalDocx = async (item: PersonalMeetingItem) => {
+    try {
+      await exportPersonalMeetingToDocx(item, currentUser);
+    } catch (err) {
+      console.warn('Docx export failed, falling back to Word doc format:', err);
+      exportPersonalMeetingToWordHtml(item, currentUser);
+    }
+  };
+
+  // Export Personal Meeting to Word (.doc)
   const handleExportPersonalWord = (item: PersonalMeetingItem) => {
-    const formattedDate = item.meetingDate
-      ? (() => {
-          const parts = item.meetingDate.split('-');
-          if (parts.length === 3) {
-            return `ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
-          }
-          return `ngày ${item.meetingDate}`;
-        })()
-      : 'ngày ... tháng ... năm ...';
-
-    const day = item.meetingDate ? item.meetingDate.split('-')[2] || '...' : '...';
-    const month = item.meetingDate ? item.meetingDate.split('-')[1] || '...' : '...';
-    const year = item.meetingDate ? item.meetingDate.split('-')[0] || '...' : '...';
-
-    const htmlContent = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head>
-        <meta charset='utf-8'>
-        <title>${item.title}</title>
-        <!--[if gte mso 9]>
-        <xml>
-          <w:WordDocument>
-            <w:View>Print</w:View>
-            <w:Zoom>100</w:Zoom>
-            <w:DoNotOptimizeForBrowser/>
-          </w:WordDocument>
-        </xml>
-        <![endif]-->
-        <style>
-          @page WordSection1 {
-            size: 595.3pt 841.9pt; /* A4 */
-            margin: 2.0cm 2.0cm 2.0cm 2.5cm;
-          }
-          div.WordSection1 { page: WordSection1; }
-          body {
-            font-family: 'Times New Roman', serif;
-            font-size: 13pt;
-            line-height: 1.25;
-            color: #000000;
-          }
-          table.admin-header {
-            width: 100%;
-            border-collapse: collapse;
-            border: none;
-            margin-bottom: 18pt;
-          }
-          table.admin-header td {
-            border: none;
-            vertical-align: top;
-            padding: 0;
-          }
-          .header-left {
-            text-align: center;
-            font-size: 12pt;
-          }
-          .header-right {
-            text-align: center;
-            font-size: 12pt;
-          }
-          .header-bold {
-            font-weight: bold;
-            text-transform: uppercase;
-          }
-          .header-line {
-            width: 50%;
-            border-bottom: 1px solid #000;
-            margin: 3pt auto 6pt auto;
-          }
-          .doc-title {
-            text-align: center;
-            font-weight: bold;
-            font-size: 15pt;
-            text-transform: uppercase;
-            margin-top: 12pt;
-            margin-bottom: 6pt;
-          }
-          .section-heading {
-            font-weight: bold;
-            text-transform: uppercase;
-            font-size: 13pt;
-            margin-top: 12pt;
-            margin-bottom: 4pt;
-          }
-          .content-block {
-            margin-left: 0pt;
-            text-align: justify;
-            white-space: pre-wrap;
-            margin-bottom: 8pt;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="WordSection1">
-          <table class="admin-header">
-            <tr>
-              <td style="width: 45%;" class="header-left">
-                TRƯỜNG TIỂU HỌC THẠNH YÊN 1<br/>
-                <span class="header-bold">${(item.category || 'SỔ GHI CHÉP HỌP').toUpperCase()}</span>
-              </td>
-              <td style="width: 55%;" class="header-right">
-                <span class="header-bold">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</span><br/>
-                <span style="font-weight: bold;">Độc lập - Tự do - Hạnh phúc</span>
-                <div class="header-line"></div>
-                <span style="font-style: italic; font-size: 12pt;">Thạnh Yên 1, ngày ${day} tháng ${month} năm ${year}</span>
-              </td>
-            </tr>
-          </table>
-
-          <div class="doc-title">${item.title.toUpperCase()}</div>
-
-          <div class="section-heading">I. THÔNG TIN CHUNG</div>
-          <div style="margin-bottom: 4pt;">1. <b>Thời gian họp:</b> ${formattedDate}</div>
-          <div style="margin-bottom: 4pt;">2. <b>Địa điểm:</b> ${item.location || 'Phòng họp'}</div>
-          <div style="margin-bottom: 4pt;">3. <b>Chủ trì:</b> ${item.chairperson || 'Chủ tọa cuộc họp'}</div>
-          ${item.attendees ? `<div style="margin-bottom: 12pt;">4. <b>Thành phần tham dự:</b> ${item.attendees}</div>` : '<div style="margin-bottom: 12pt;"></div>'}
-
-          <div class="section-heading">II. NỘI DUNG GHI CHÉP CUỘC HỌP</div>
-          <div class="content-block">${item.content || 'Chưa có nội dung ghi chép.'}</div>
-
-          ${item.actionItems ? `
-          <div class="section-heading">III. NHIỆM VỤ VÀ TRỌNG TÂM CẦN THỰC HIỆN</div>
-          <div class="content-block">${item.actionItems}</div>
-          ` : ''}
-
-          ${item.note ? `
-          <div style="margin-top: 12pt; font-style: italic;">
-            <b>Ghi chú:</b> ${item.note}
-          </div>
-          ` : ''}
-
-          <table style="width: 100%; border-collapse: collapse; margin-top: 30pt;">
-            <tr>
-              <td style="width: 50%;"></td>
-              <td style="width: 50%; text-align: center;">
-                <span style="font-style: italic; font-size: 11pt;">Thạnh Yên 1, ngày ${day} tháng ${month} năm ${year}</span><br/>
-                <b>NGƯỜI GHI SỔ</b><br/>
-                <span style="font-style: italic; font-size: 10pt;">(Ký và ghi rõ họ tên)</span>
-                <br/><br/><br/><br/>
-                <b>${currentUser?.name || 'Giáo viên'}</b>
-              </td>
-            </tr>
-          </table>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const blob = new Blob(['\ufeff' + htmlContent], {
-      type: 'application/msword;charset=utf-8'
-    });
-    const link = document.createElement('a');
-    const cleanFileName = item.title.replace(/[^a-zA-Z0-9_ -]/g, '_');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${cleanFileName}_SoHop.doc`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportPersonalMeetingToWordHtml(item, currentUser);
   };
 
-  // Export Department Meeting to Word file formatted according to Nghị định 30/2020/NĐ-CP
+  // Export Department Meeting to Word (.docx) formatted according to Nghị định 30/2020/NĐ-CP
+  const handleExportDepartmentDocx = async (item: DepartmentMeetingItem) => {
+    try {
+      await exportDepartmentMeetingToDocx(item);
+    } catch (err) {
+      console.warn('Docx export failed, falling back to Word doc format:', err);
+      exportDepartmentMeetingToWordHtml(item);
+    }
+  };
+
+  // Export Department Meeting to Word (.doc)
   const handleExportDepartmentWord = (item: DepartmentMeetingItem) => {
-    const formattedDate = item.meetingDate
-      ? (() => {
-          const parts = item.meetingDate.split('-');
-          if (parts.length === 3) {
-            return `ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
-          }
-          return `ngày ${item.meetingDate}`;
-        })()
-      : 'ngày ... tháng ... năm ...';
-
-    const day = item.meetingDate ? item.meetingDate.split('-')[2] || '...' : '...';
-    const month = item.meetingDate ? item.meetingDate.split('-')[1] || '...' : '...';
-    const year = item.meetingDate ? item.meetingDate.split('-')[0] || '...' : '...';
-
-    const htmlContent = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head>
-        <meta charset='utf-8'>
-        <title>${item.title}</title>
-        <!--[if gte mso 9]>
-        <xml>
-          <w:WordDocument>
-            <w:View>Print</w:View>
-            <w:Zoom>100</w:Zoom>
-            <w:DoNotOptimizeForBrowser/>
-          </w:WordDocument>
-        </xml>
-        <![endif]-->
-        <style>
-          @page WordSection1 {
-            size: 595.3pt 841.9pt; /* A4 */
-            margin: 2.0cm 2.0cm 2.0cm 2.5cm; /* Standard admin margins */
-          }
-          div.WordSection1 { page: WordSection1; }
-          body {
-            font-family: 'Times New Roman', serif;
-            font-size: 13pt;
-            line-height: 1.25;
-            color: #000000;
-          }
-          table.admin-header {
-            width: 100%;
-            border-collapse: collapse;
-            border: none;
-            margin-bottom: 18pt;
-          }
-          table.admin-header td {
-            border: none;
-            vertical-align: top;
-            padding: 0;
-          }
-          .header-left {
-            text-align: center;
-            font-size: 12pt;
-          }
-          .header-right {
-            text-align: center;
-            font-size: 12pt;
-          }
-          .header-bold {
-            font-weight: bold;
-            text-transform: uppercase;
-          }
-          .header-line {
-            width: 50%;
-            border-bottom: 1px solid #000;
-            margin: 3pt auto 6pt auto;
-          }
-          .doc-title {
-            text-align: center;
-            font-weight: bold;
-            font-size: 15pt;
-            text-transform: uppercase;
-            margin-top: 12pt;
-            margin-bottom: 4pt;
-          }
-          .doc-subtitle {
-            text-align: center;
-            font-style: italic;
-            font-size: 12pt;
-            margin-bottom: 18pt;
-          }
-          .section-heading {
-            font-weight: bold;
-            text-transform: uppercase;
-            font-size: 13pt;
-            margin-top: 12pt;
-            margin-bottom: 4pt;
-          }
-          .content-block {
-            margin-left: 0pt;
-            text-align: justify;
-            white-space: pre-wrap;
-            margin-bottom: 8pt;
-          }
-          table.sign-table {
-            width: 100%;
-            border-collapse: collapse;
-            border: none;
-            margin-top: 24pt;
-          }
-          table.sign-table td {
-            border: none;
-            vertical-align: top;
-            text-align: center;
-            padding: 0;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="WordSection1">
-          <!-- Administrative Header (Nghị định 30/2020/NĐ-CP) -->
-          <table class="admin-header">
-            <tr>
-              <td style="width: 45%;" class="header-left">
-                TRƯỜNG TIỂU HỌC THẠNH YÊN 1<br/>
-                <span class="header-bold">${(item.department || 'TỔ KHỐI').toUpperCase()}</span><br/>
-                <span style="font-size: 11pt; font-style: italic;">Số: ....../BB-TK</span>
-              </td>
-              <td style="width: 55%;" class="header-right">
-                <span class="header-bold">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</span><br/>
-                <span style="font-weight: bold;">Độc lập - Tự do - Hạnh phúc</span>
-                <div class="header-line"></div>
-                <span style="font-style: italic; font-size: 12pt;">Thạnh Yên 1, ngày ${day} tháng ${month} năm ${year}</span>
-              </td>
-            </tr>
-          </table>
-
-          <!-- Document Title -->
-          <div class="doc-title">${item.title.toUpperCase()}</div>
-          ${item.purpose ? `<div class="doc-subtitle">(V/v: ${item.purpose})</div>` : '<div style="margin-bottom: 12pt;"></div>'}
-
-          <!-- Section I: General Info -->
-          <div class="section-heading">I. THỜI GIAN, ĐỊA ĐIỂM VÀ THÀNH PHẦN THAM DỰ</div>
-          <div style="margin-bottom: 4pt;">1. <b>Thời gian:</b> Từ ${item.timeStart || '14:00'} đến ${item.timeEnd || '16:00'}, ${formattedDate}</div>
-          <div style="margin-bottom: 4pt;">2. <b>Địa điểm:</b> ${item.location || 'Phòng họp chuyên môn'}</div>
-          <div style="margin-bottom: 4pt;">3. <b>Chủ trì:</b> Đồng chí ${item.chairperson} - Tổ trưởng</div>
-          <div style="margin-bottom: 4pt;">4. <b>Thư ký:</b> Đồng chí ${item.secretary}</div>
-          <div style="margin-bottom: 12pt;">5. <b>Thành phần tham dự:</b> Tổng số ${item.totalMembers || 6} đồng chí. Có mặt: ${item.presentMembers || 6} đ/c, Vắng mặt: ${item.absentMembers || 'Không'}.</div>
-
-          <!-- Section II: Content -->
-          <div class="section-heading">II. NỘI DUNG CUỘC HỌP</div>
-
-          <div style="font-weight: bold; margin-top: 6pt; margin-bottom: 3pt;">1. Đánh giá công tác thời gian qua:</div>
-          <div class="content-block">${item.reviewPastWork || 'Chưa có nội dung.'}</div>
-
-          <div style="font-weight: bold; margin-top: 6pt; margin-bottom: 3pt;">2. Triển khai kế hoạch thời gian tới:</div>
-          <div class="content-block">${item.upcomingPlan || 'Chưa có nội dung.'}</div>
-
-          ${item.discussions ? `
-          <div style="font-weight: bold; margin-top: 6pt; margin-bottom: 3pt;">3. Ý kiến thảo luận của các thành viên:</div>
-          <div class="content-block">${item.discussions}</div>
-          ` : ''}
-
-          <div style="font-weight: bold; margin-top: 6pt; margin-bottom: 3pt;">4. Kết luận & Quyết nghị của Tổ khối:</div>
-          <div class="content-block">${item.resolutions || '100% thành viên tham dự nhất trí thông qua nội dung cuộc họp.'}</div>
-
-          <!-- Section III: Closing -->
-          <div class="section-heading" style="margin-top: 14pt;">III. KẾT THÚC CUỘC HỌP</div>
-          <div style="text-align: justify; margin-bottom: 12pt;">
-            Biên bản cuộc họp đã được đọc lại cho toàn thể các thành viên tham dự cùng nghe, nhất trí hoàn toàn với các nội dung đã ghi và không có ý kiến bổ sung. Cuộc họp kết thúc vào lúc ${item.timeEnd || '16:00'} cùng ngày.
-          </div>
-
-          <!-- Signatures Table -->
-          <table class="sign-table">
-            <tr>
-              <td style="width: 40%; text-align: left; font-size: 11pt;">
-                <b><i>Nơi nhận:</i></b><br/>
-                - BGH nhà trường (để b/c);<br/>
-                - Các thành viên trong tổ;<br/>
-                - Lưu: VT, Hồ sơ Tổ.
-              </td>
-              <td style="width: 30%; text-align: center;">
-                <b>THƯ KÝ</b><br/>
-                <span style="font-style: italic; font-size: 11pt;">(Ký và ghi rõ họ tên)</span>
-                <br/><br/><br/><br/>
-                <b>${item.secretary}</b>
-              </td>
-              <td style="width: 30%; text-align: center;">
-                <b>CHỦ TỌA / TỔ TRƯỞNG</b><br/>
-                <span style="font-style: italic; font-size: 11pt;">(Ký và ghi rõ họ tên)</span>
-                <br/><br/><br/><br/>
-                <b>${item.chairperson}</b>
-              </td>
-            </tr>
-          </table>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const blob = new Blob(['\ufeff' + htmlContent], {
-      type: 'application/msword;charset=utf-8'
-    });
-    const link = document.createElement('a');
-    const cleanFileName = item.title.replace(/[^a-zA-Z0-9_ -]/g, '_');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${cleanFileName}_BienBan.doc`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportDepartmentMeetingToWordHtml(item);
   };
 
   // Legacy/Text Export
@@ -1354,8 +1045,90 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Compact Streamlined Control Toolbar */}
-      <div className="bg-white/95 backdrop-blur-md border border-teal-200/80 rounded-2xl p-2.5 sm:px-4 sm:py-3 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-2.5">
+      {/* Module Navigation Tabs */}
+      <div className="flex items-center gap-1.5 p-1 bg-white/95 backdrop-blur-md rounded-2xl border border-teal-200/90 shadow-2xs overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setActiveTab('personal')}
+          className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'personal'
+              ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-teal-800 hover:bg-teal-50/70'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Sổ Họp Cá Nhân</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              activeTab === 'personal' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {state.personalMeetings?.length || 0}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('department')}
+          className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'department'
+              ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-teal-800 hover:bg-teal-50/70'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          <span>Biên Bản Tổ Khối</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              activeTab === 'department' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {state.departmentMeetings?.length || 0}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('schedule')}
+          className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'schedule'
+              ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-teal-800 hover:bg-teal-50/70'
+          }`}
+        >
+          <CalendarDays className="w-4 h-4" />
+          <span>Lịch Họp Chuyên Môn</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              activeTab === 'schedule' ? 'bg-amber-400 text-amber-950' : 'bg-teal-100 text-teal-800'
+            }`}
+          >
+            LỊCH HỌP
+          </span>
+        </button>
+      </div>
+
+      {activeTab === 'schedule' ? (
+        <MeetingScheduleTab
+          state={state}
+          onUpdateState={onUpdateState}
+          currentUser={currentUser}
+          onNavigate={onNavigate}
+          onOpenCreateDepartmentMeeting={() => {
+            setActiveTab('department');
+            setEditingDepartment(null);
+            setIsDepartmentModalOpen(true);
+          }}
+          onOpenEditDepartmentMeeting={(meeting) => {
+            setActiveTab('department');
+            setEditingDepartment(meeting);
+            setIsDepartmentModalOpen(true);
+          }}
+        />
+      ) : (
+        <>
+          {/* Compact Streamlined Control Toolbar */}
+          <div className="bg-white/95 backdrop-blur-md border border-teal-200/80 rounded-2xl p-2.5 sm:px-4 sm:py-3 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-2.5">
         {/* Left: Search & Filter */}
         <div className="flex items-center gap-2 w-full sm:w-auto flex-1 min-w-0">
           <div className="relative flex-1 sm:max-w-xs">
@@ -1779,9 +1552,9 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleExportPersonalWord(item)}
+                                onClick={() => handleExportPersonalDocx(item)}
                                 className="p-1.5 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-teal-50 transition-colors cursor-pointer"
-                                title="Xuất file Word (.doc) chuẩn hành chính"
+                                title="Xuất file Word (.docx) chuẩn thể thức và giữ nguyên từng dòng ngắt"
                               >
                                 <Download className="w-4 h-4 text-teal-600" />
                               </button>
@@ -1905,9 +1678,9 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => handleExportPersonalWord(item)}
+                        onClick={() => handleExportPersonalDocx(item)}
                         className="p-1.5 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-teal-50 transition-colors cursor-pointer"
-                        title="Xuất file Word (.doc) chuẩn hành chính"
+                        title="Xuất file Word (.docx) chuẩn thể thức và giữ nguyên từng dòng ngắt"
                       >
                         <Download className="w-4 h-4 text-teal-600" />
                       </button>
@@ -2064,9 +1837,9 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleExportDepartmentWord(item)}
+                                onClick={() => handleExportDepartmentDocx(item)}
                                 className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
-                                title="Xuất biên bản Word (.doc) chuẩn hành chính"
+                                title="Xuất biên bản Word (.docx) chuẩn thể thức và giữ nguyên từng dòng ngắt"
                               >
                                 <Download className="w-4 h-4 text-indigo-600" />
                               </button>
@@ -2194,9 +1967,9 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => handleExportDepartmentWord(item)}
+                        onClick={() => handleExportDepartmentDocx(item)}
                         className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
-                        title="Xuất biên bản Word (.doc) chuẩn hành chính"
+                        title="Xuất biên bản Word (.docx) chuẩn thể thức và giữ nguyên từng dòng ngắt"
                       >
                         <Download className="w-4 h-4 text-indigo-600" />
                       </button>
@@ -2241,6 +2014,8 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
             </div>
           )}
         </div>
+      )}
+        </>
       )}
 
       {/* ========================================== */}
@@ -2564,6 +2339,19 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                       <Wand2 className="w-3.5 h-3.5 text-purple-600" />
                       <span>✨ Tinh lọc AI</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const formatted = normalizeAdministrativeText(personalFormContent);
+                        setPersonalFormContent(formatted);
+                      }}
+                      disabled={!personalFormContent.trim()}
+                      className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                      title="Tự động chuẩn hóa dấu câu, gạch đầu dòng và ngắt đoạn chuẩn Nghị định 30/2020/NĐ-CP"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                      <span>✨ Chuẩn hóa NĐ 30</span>
+                    </button>
                   </div>
                 </div>
                 <textarea
@@ -2573,8 +2361,11 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                   onChange={(e) => setPersonalFormContent(e.target.value)}
                   required
                   placeholder="Ghi chép diễn biến, nội dung chỉ đạo, triển khai nhiệm vụ... (Có thể bấm '🎙️ Ghi âm trực tiếp' để nói trực tiếp vào ô này)"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-teal-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-normal leading-relaxed focus:outline-none focus:border-teal-500 font-sans"
                 />
+                <p className="text-[11px] text-teal-700 font-medium flex items-center gap-1">
+                  <span>💡 <b>Quy chuẩn thể thức:</b> Thầy/Cô chỉ cần nhấn Enter để xuống dòng viết các ý tiếp theo. Hệ thống tự động thụt đầu dòng 1.27cm và giữ nguyên từng dòng khi xuất Word / In ấn.</span>
+                </p>
               </div>
 
               <div className="space-y-1">
@@ -2901,6 +2692,19 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                         <Wand2 className="w-3.5 h-3.5 text-purple-600" />
                         <span>✨ Tinh lọc AI</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const formatted = normalizeAdministrativeText(deptFormReviewPastWork);
+                          setDeptFormReviewPastWork(formatted);
+                        }}
+                        disabled={!deptFormReviewPastWork.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Chuẩn hóa ngắt đoạn, dấu câu theo Nghị định 30/2020/NĐ-CP"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                        <span>✨ Chuẩn hóa NĐ 30</span>
+                      </button>
                     </div>
                   </div>
                   <textarea
@@ -2957,6 +2761,19 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                       >
                         <Wand2 className="w-3.5 h-3.5 text-purple-600" />
                         <span>✨ Tinh lọc AI</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const formatted = normalizeAdministrativeText(deptFormUpcomingPlan);
+                          setDeptFormUpcomingPlan(formatted);
+                        }}
+                        disabled={!deptFormUpcomingPlan.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Chuẩn hóa ngắt đoạn, dấu câu theo Nghị định 30/2020/NĐ-CP"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                        <span>✨ Chuẩn hóa NĐ 30</span>
                       </button>
                     </div>
                   </div>
@@ -3015,6 +2832,19 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                         <Wand2 className="w-3.5 h-3.5 text-purple-600" />
                         <span>✨ Tinh lọc AI</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const formatted = normalizeAdministrativeText(deptFormDiscussions);
+                          setDeptFormDiscussions(formatted);
+                        }}
+                        disabled={!deptFormDiscussions.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Chuẩn hóa ngắt đoạn, dấu câu theo Nghị định 30/2020/NĐ-CP"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                        <span>✨ Chuẩn hóa NĐ 30</span>
+                      </button>
                     </div>
                   </div>
                   <textarea
@@ -3072,6 +2902,19 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                         <Wand2 className="w-3.5 h-3.5 text-purple-600" />
                         <span>✨ Tinh lọc AI</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const formatted = normalizeAdministrativeText(deptFormResolutions);
+                          setDeptFormResolutions(formatted);
+                        }}
+                        disabled={!deptFormResolutions.trim()}
+                        className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                        title="Chuẩn hóa ngắt đoạn, dấu câu theo Nghị định 30/2020/NĐ-CP"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                        <span>✨ Chuẩn hóa NĐ 30</span>
+                      </button>
                     </div>
                   </div>
                   <textarea
@@ -3086,8 +2929,8 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
               </div>
 
               <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-2 shrink-0">
-                <span className="text-xs text-slate-500 font-medium hidden sm:inline">
-                  💡 Khung soạn thảo rộng rãi giúp Thầy/Cô nhìn toàn cảnh và nhập nội dung biên bản dài một cách dễ dàng.
+                <span className="text-xs text-indigo-900 font-semibold hidden sm:inline">
+                  💡 <b>Thể thức chuẩn NĐ 30:</b> Thầy/Cô chỉ cần nhấn Enter xuống dòng để viết các ý tiếp theo. Khi xuất Word (.docx/.doc) hoặc In ấn, từng dòng ngắt và thụt lề 1.27cm sẽ được tự động bảo toàn 100%.
                 </span>
                 <div className="flex items-center gap-2 ml-auto">
                   <button
@@ -3164,11 +3007,12 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
 
               <div className="space-y-1">
                 <strong className="text-xs uppercase tracking-wider text-teal-800 font-black block">
-                  Nội dung cuộc họp:
+                  Nội dung cuộc họp (Chuẩn thể thức NĐ 30):
                 </strong>
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap font-normal">
-                  {viewingPersonal.content}
-                </div>
+                <div
+                  className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs leading-relaxed text-slate-900 font-serif"
+                  dangerouslySetInnerHTML={{ __html: formatAdministrativeHtmlText(viewingPersonal.content) }}
+                />
               </div>
 
               {viewingPersonal.actionItems && (
@@ -3176,9 +3020,10 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                   <strong className="text-xs uppercase tracking-wider text-amber-800 font-black block">
                     📌 Nhiệm vụ & Trọng tâm:
                   </strong>
-                  <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs leading-relaxed text-amber-950 whitespace-pre-wrap font-medium">
-                    {viewingPersonal.actionItems}
-                  </div>
+                  <div
+                    className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs leading-relaxed text-amber-950 font-serif"
+                    dangerouslySetInnerHTML={{ __html: formatAdministrativeHtmlText(viewingPersonal.actionItems) }}
+                  />
                 </div>
               )}
 
@@ -3189,7 +3034,7 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
               )}
             </div>
 
-            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
               <button
                 type="button"
                 onClick={() =>
@@ -3198,26 +3043,43 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
                     viewingPersonal.id
                   )
                 }
-                className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
+                className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 flex items-center gap-1 cursor-pointer shrink-0"
               >
                 {copiedId === viewingPersonal.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedId === viewingPersonal.id ? 'Đã sao chép!' : 'Sao chép nội dung'}</span>
+                <span>{copiedId === viewingPersonal.id ? 'Đã sao chép!' : 'Sao chép'}</span>
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap ml-auto">
+                <button
+                  type="button"
+                  onClick={() => handlePrintPersonal(viewingPersonal)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-extrabold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  title="In bản ghi hoặc Lưu file PDF chuẩn A4 (Nghị định 30/2020/NĐ-CP)"
+                >
+                  <Printer className="w-3.5 h-3.5 text-teal-700" />
+                  <span>🖨️ In / PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportPersonalDocx(viewingPersonal)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-teal-700 to-teal-600 hover:from-teal-800 hover:to-teal-700 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  title="Xuất file Word (.docx) chuẩn thể thức và giữ nguyên từng dòng ngắt"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>📄 Xuất Word (.docx)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleExportPersonalWord(viewingPersonal)}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-teal-700 to-teal-600 hover:from-teal-800 hover:to-teal-700 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
-                  title="Xuất file Word (.doc) đúng thể thức văn bản hành chính"
+                  className="px-2.5 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 font-extrabold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  title="Xuất file Word (.doc) tương thích máy tính cũ"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>📄 Xuất file Word (.doc)</span>
+                  <span>.doc</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewingPersonal(null)}
-                  className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold text-xs cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold text-xs cursor-pointer"
                 >
                   Đóng
                 </button>
@@ -3285,48 +3147,52 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
               </div>
 
               {/* Sections */}
-              <div className="space-y-3 font-sans text-xs leading-relaxed text-slate-800">
+              <div className="space-y-3 font-serif text-xs leading-relaxed text-slate-900">
                 {viewingDepartment.reviewPastWork && (
                   <div className="space-y-1">
-                    <h4 className="font-extrabold text-indigo-900 uppercase">
+                    <h4 className="font-extrabold text-indigo-900 uppercase font-sans">
                       I. ĐÁNH GIÁ CÔNG TÁC TUẦN/THÁNG QUA
                     </h4>
-                    <div className="p-3 bg-white rounded-xl border border-slate-200 whitespace-pre-wrap">
-                      {viewingDepartment.reviewPastWork}
-                    </div>
+                    <div
+                      className="p-3 bg-white rounded-xl border border-slate-200"
+                      dangerouslySetInnerHTML={{ __html: formatAdministrativeHtmlText(viewingDepartment.reviewPastWork) }}
+                    />
                   </div>
                 )}
 
                 {viewingDepartment.upcomingPlan && (
                   <div className="space-y-1">
-                    <h4 className="font-extrabold text-indigo-900 uppercase">
-                      II. TRIỂN KHAI KẾ HOẠCH TUẦN/THÁNG TỚI
+                    <h4 className="font-extrabold text-indigo-900 uppercase font-sans">
+                      II. TRIỂN KHAI KẾ HOẠCH TUẦN/THÁNG TỚI / SINH HOẠT CHUYÊN MÔN THEO NCBH
                     </h4>
-                    <div className="p-3 bg-white rounded-xl border border-slate-200 whitespace-pre-wrap">
-                      {viewingDepartment.upcomingPlan}
-                    </div>
+                    <div
+                      className="p-3 bg-white rounded-xl border border-slate-200"
+                      dangerouslySetInnerHTML={{ __html: formatAdministrativeHtmlText(viewingDepartment.upcomingPlan) }}
+                    />
                   </div>
                 )}
 
                 {viewingDepartment.discussions && (
                   <div className="space-y-1">
-                    <h4 className="font-extrabold text-indigo-900 uppercase">
+                    <h4 className="font-extrabold text-indigo-900 uppercase font-sans">
                       III. Ý KIẾN THẢO LUẬN CỦA CÁC THÀNH VIÊN
                     </h4>
-                    <div className="p-3 bg-white rounded-xl border border-slate-200 whitespace-pre-wrap">
-                      {viewingDepartment.discussions}
-                    </div>
+                    <div
+                      className="p-3 bg-white rounded-xl border border-slate-200"
+                      dangerouslySetInnerHTML={{ __html: formatAdministrativeHtmlText(viewingDepartment.discussions) }}
+                    />
                   </div>
                 )}
 
                 {viewingDepartment.resolutions && (
                   <div className="space-y-1">
-                    <h4 className="font-extrabold text-indigo-900 uppercase">
+                    <h4 className="font-extrabold text-indigo-900 uppercase font-sans">
                       IV. KẾT LUẬN & QUYẾT NGHỊ
                     </h4>
-                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-950 font-medium whitespace-pre-wrap">
-                      {viewingDepartment.resolutions}
-                    </div>
+                    <div
+                      className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-950 font-medium"
+                      dangerouslySetInnerHTML={{ __html: formatAdministrativeHtmlText(viewingDepartment.resolutions) }}
+                    />
                   </div>
                 )}
               </div>
@@ -3348,30 +3214,39 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
               </div>
             </div>
 
-            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
               <button
                 type="button"
-                onClick={handlePrint}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
+                onClick={() => handlePrintDepartment(viewingDepartment)}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-300 text-slate-700 font-extrabold text-xs hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="In hoặc Lưu file PDF chuẩn A4 (Nghị định 30/2020/NĐ-CP)"
               >
-                <Printer className="w-4 h-4" />
-                <span>In Biên Bản</span>
+                <Printer className="w-3.5 h-3.5 text-indigo-700" />
+                <span>🖨️ In / PDF</span>
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap ml-auto">
+                <button
+                  type="button"
+                  onClick={() => handleExportDepartmentDocx(viewingDepartment)}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-700 to-indigo-600 hover:from-indigo-800 hover:to-indigo-700 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
+                  title="Xuất biên bản họp sang file Word (.docx) chuẩn thể thức và giữ nguyên từng dòng ngắt"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>📄 Xuất Word (.docx)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleExportDepartmentWord(viewingDepartment)}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-700 to-indigo-600 hover:from-indigo-800 hover:to-indigo-700 text-white font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
-                  title="Xuất biên bản họp sang file Word (.doc) đúng chuẩn hành chính"
+                  className="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-extrabold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                  title="Xuất biên bản họp sang file Word (.doc) tương thích máy tính cũ"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>📄 Xuất Biên Bản Word (.doc)</span>
+                  <span>.doc</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewingDepartment(null)}
-                  className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold text-xs cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold text-xs cursor-pointer"
                 >
                   Đóng
                 </button>

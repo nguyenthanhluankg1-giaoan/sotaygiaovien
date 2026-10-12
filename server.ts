@@ -1733,21 +1733,25 @@ app.post('/api/ai/meeting-speech-refine', async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
     });
 
-    const promptText = `Bạn là một thư ký hành chính trường học xuất sắc của ngành Giáo dục và Đào tạo Việt Nam, am hiểu sâu sắc về văn phong hành chính, chuẩn mực đạo đức nhà giáo và các quy định về biên bản cuộc họp trường học/tổ chuyên môn.
+    const promptText = `Bạn là một thư ký hành chính trường học xuất sắc của ngành Giáo dục và Đào tạo Việt Nam, am hiểu sâu sắc về văn phong hành chính theo Nghị định 30/2020/NĐ-CP, chuẩn mực đạo đức nhà giáo và các quy định về biên bản cuộc họp trường học/tổ chuyên môn.
 
 Nhiệm vụ:
-Phân tích lời nói / đoạn ghi âm / nội dung thô từ cuộc họp giáo viên dưới đây và tổng hợp thành Biên bản họp chuyên nghiệp, súc tích, đầy đủ.
+Phân tích lời nói / đoạn ghi âm / nội dung thô từ cuộc họp giáo viên dưới đây và tổng hợp thành Biên bản họp chuyên nghiệp, đúng thể thức, súc tích, đầy đủ.
 
 Yêu cầu BẮT BUỘC:
 1. ĐÚNG CHUẨN MỰC, ĐẠO ĐỨC NGÀNH GIÁO DỤC: Dùng ngôn từ trang trọng, văn phong sư phạm, khách quan, chuẩn mực, xây dựng tinh thần đoàn kết nhà trường và tôn trọng đồng nghiệp.
 2. TẬP TRUNG NỘI DUNG CỐT LÕI: Lọc bỏ hoàn toàn các lời nói chuyện phiếm, nói đùa lan man, ý kiến bên lề không liên quan đến công tác chuyên môn/nhà trường.
-3. CẤU TRÚC RÕ RÀNG VÀ CHUẨN XÁC:
+3. ĐỊNH DẠNG VĂN BẢN VÀ XUỐNG DÒNG ĐÚNG THỂ THỨC (Nghị định 30/2020/NĐ-CP):
+   - MỖI Ý HOẶC NỘI DUNG PHẢI ĐƯỢC XUỐNG DÒNG RÕ RÀNG (sử dụng ký tự xuống dòng \\n).
+   - Mỗi ý cụ thể bắt đầu bằng gạch đầu dòng "- " hoặc số thứ tự "1.", "2.", "a)", "b)".
+   - Tuyệt đối không viết dồn tất cả các ý thành một khối văn bản dài không có ngắt dòng.
+4. CẤU TRÚC RÕ RÀNG VÀ CHUẨN XÁC:
    - "title": Tên cuộc họp trang trọng (ví dụ: Biên bản họp Tổ chuyên môn Khối ... / Biên bản Họp Chuyên môn...)
-   - "reviewPastWork": I. NỘI DUNG SINH HOẠT / ĐÁNH GIÁ CÔNG TÁC (Tóm tắt các đánh giá, kết quả đã đạt, ưu điểm và lưu ý)
-   - "upcomingPlan": II. SINH HOẠT CHUYÊN MÔN THEO NGHIÊN CỨU BÀI HỌC / KẾ HOẠCH (Các bước chọn bài học, thảo luận kế hoạch bài dạy, dự giờ minh họa hoặc kế hoạch tuần tới)
-   - "discussions": III. KẾT LUẬN CHUNG VÀ PHÂN CÔNG THỰC HIỆN (Kết luận của Tổ trưởng/Chủ trì và phân công công việc)
+   - "reviewPastWork": I. NỘI DUNG SINH HOẠT / ĐÁNH GIÁ CÔNG TÁC (Tóm tắt các đánh giá, kết quả đã đạt, ưu điểm và lưu ý, chia từng dòng rõ ràng)
+   - "upcomingPlan": II. SINH HOẠT CHUYÊN MÔN THEO NGHIÊN CỨU BÀI HỌC / KẾ HOẠCH (Các bước chọn bài học, thảo luận kế hoạch bài dạy, dự giờ minh họa hoặc kế hoạch tuần tới, chia từng dòng rõ ràng)
+   - "discussions": III. KẾT LUẬN CHUNG VÀ PHÂN CÔNG THỰC HIỆN (Kết luận của Tổ trưởng/Chủ trì và phân công công việc, chia từng dòng rõ ràng)
    - "resolutions": IV. KẾT THÚC (Biểu quyết/Thống nhất chung và thời điểm kết thúc)
-   - "actionItems": Các nhiệm vụ phân công cụ thể cho giáo viên (dạng danh sách gạch đầu dòng ngắn gọn)
+   - "actionItems": Các nhiệm vụ phân công cụ thể cho giáo viên (dạng danh sách gạch đầu dòng ngắn gọn, mỗi nhiệm vụ một dòng riêng biệt)
 
 Đoạn văn bản lời nói/cuộc họp thô:
 """
