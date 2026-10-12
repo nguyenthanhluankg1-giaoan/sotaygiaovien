@@ -125,31 +125,6 @@
         "game": { "type": "object" },
         "createdAt": { "type": "string" }
       }
-    },
-    "UrgentReport": {
-      "title": "Urgent Report",
-      "description": "Urgent data collection report template from Excel and shared forms",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "description": { "type": "string" },
-        "urgentLevel": { "type": "string", "enum": ["normal", "urgent", "very_urgent"] },
-        "deadline": { "type": "string" },
-        "creatorId": { "type": "string" },
-        "creatorName": { "type": "string" },
-        "status": { "type": "string", "enum": ["open", "closed"] },
-        "fileName": { "type": "string" },
-        "sheetNames": { "type": "array" },
-        "activeSheetName": { "type": "string" },
-        "columns": { "type": "array" },
-        "rows": { "type": "array" },
-        "allowNewRows": { "type": "boolean" },
-        "identifierColumnId": { "type": "string" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
-      },
-      "required": ["id", "title", "creatorId", "columns", "rows", "status"]
     }
   },
   "firestore": {
@@ -184,10 +159,6 @@
     "/shared_dragdrop_games/{shareId}": {
       "schema": "SharedDragDropGame",
       "description": "Shared drag and drop game payloads"
-    },
-    "/workspaces/{reportId}": {
-      "schema": "UrgentReport",
-      "description": "Shared urgent reports and forms stored within permitted workspaces collection"
     }
   }
 }

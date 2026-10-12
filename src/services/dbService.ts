@@ -19,10 +19,7 @@ import {
   LessonPlanRow,
   DetailedLessonPlan,
   ConfiguredClass,
-  ContactInfo,
-  UrgentReportItem,
-  ReportRow,
-  ReportColumn
+  ContactInfo
 } from '../types';
 import { getDefaultState, getDefaultStateForUser } from '../utils/helpers';
 
@@ -53,63 +50,7 @@ interface FirestoreErrorInfo {
   }
 }
 
-// Circuit breaker flag for Firestore quota or connection issues
-const QUOTA_EXCEEDED_SESSION_KEY = 'firestore_quota_exceeded_v1';
-
-let isFirestoreQuotaExceeded = (() => {
-  try {
-    const stored = sessionStorage.getItem(QUOTA_EXCEEDED_SESSION_KEY);
-    if (stored) {
-      const ts = parseInt(stored, 10);
-      if (!isNaN(ts) && Date.now() - ts < 15 * 60 * 1000) {
-        return true;
-      }
-    }
-  } catch (e) {}
-  return false;
-})();
-
-let quotaExceededTimestamp = isFirestoreQuotaExceeded ? Date.now() : 0;
-
-export function checkFirestoreQuotaExceeded(err: any): boolean {
-  if (!err) return false;
-  const str = String(err?.message || err?.code || err).toLowerCase();
-  if (
-    str.includes('resource-exhausted') ||
-    str.includes('quota limit exceeded') ||
-    str.includes('quota exceeded') ||
-    str.includes('free daily write units')
-  ) {
-    if (!isFirestoreQuotaExceeded) {
-      console.warn('[Cloud Firestore] Daily write quota exceeded. Operating seamlessly in local cache mode.');
-    }
-    isFirestoreQuotaExceeded = true;
-    quotaExceededTimestamp = Date.now();
-    try {
-      sessionStorage.setItem(QUOTA_EXCEEDED_SESSION_KEY, String(Date.now()));
-    } catch (e) {}
-    return true;
-  }
-  return false;
-}
-
-export function shouldSkipFirestoreWrite(): boolean {
-  if (!isFirestoreQuotaExceeded) return false;
-  // If quota was exceeded within last 15 minutes, skip remote calls to prevent background retry loops
-  if (Date.now() - quotaExceededTimestamp < 15 * 60 * 1000) {
-    return true;
-  }
-  isFirestoreQuotaExceeded = false;
-  try {
-    sessionStorage.removeItem(QUOTA_EXCEEDED_SESSION_KEY);
-  } catch (e) {}
-  return false;
-}
-
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  if (checkFirestoreQuotaExceeded(error)) {
-    return;
-  }
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -125,8 +66,9 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  };
-  console.warn(`Firestore Notice (${operationType} @ ${path}):`, errInfo.error);
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
 }
 
 const LOCAL_USERS_KEY = 'lopHoc_system_users_v1';
@@ -206,7 +148,6 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
     setLocalCachedUsers(list);
     return list;
   } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
     // If it's a connection or offline error, use local cache silently with a helpful log
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline') || err?.code === 'failed-precondition') {
       console.warn('Firestore is currently operating offline/unavailable, using local cache.');
@@ -223,25 +164,20 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
  * Create or update a user in Firestore
  */
 export async function saveUserToFirestore(user: UserAccount): Promise<boolean> {
-  // Update local cache first
-  const currentList = getLocalCachedUsers();
-  const idx = currentList.findIndex((u) => u.id === user.id);
-  if (idx >= 0) {
-    currentList[idx] = user;
-  } else {
-    currentList.push(user);
-  }
-  setLocalCachedUsers(currentList);
-
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
-
+  const path = `users/${user.id}`;
   try {
     await setDoc(doc(db, 'users', user.id), user);
+    // Update local cache
+    const currentList = getLocalCachedUsers();
+    const idx = currentList.findIndex((u) => u.id === user.id);
+    if (idx >= 0) {
+      currentList[idx] = user;
+    } else {
+      currentList.push(user);
+    }
+    setLocalCachedUsers(currentList);
     return true;
   } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, saved to local cache only.');
       return false;
@@ -255,19 +191,15 @@ export async function saveUserToFirestore(user: UserAccount): Promise<boolean> {
  * Delete a user from Firestore
  */
 export async function deleteUserFromFirestore(userId: string): Promise<boolean> {
-  const currentList = getLocalCachedUsers().filter((u) => u.id !== userId);
-  setLocalCachedUsers(currentList);
-
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
-
   try {
     await deleteDoc(doc(db, 'users', userId));
+    const currentList = getLocalCachedUsers().filter((u) => u.id !== userId);
+    setLocalCachedUsers(currentList);
     return true;
   } catch (err) {
-    checkFirestoreQuotaExceeded(err);
-    console.warn('Delete user Firestore notice:', err);
+    console.error('Failed to delete user from Firestore:', err);
+    const currentList = getLocalCachedUsers().filter((u) => u.id !== userId);
+    setLocalCachedUsers(currentList);
     return false;
   }
 }
@@ -421,10 +353,6 @@ export async function saveAppStateToFirestore(
   state: AppState,
   meta?: { userId?: string; teacherName?: string; role?: string }
 ): Promise<boolean> {
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
-
   const path = `workspaces/${key}`;
   const nowIso = new Date().toISOString();
   const userId = meta?.userId || state.ownerUserId || '';
@@ -443,9 +371,6 @@ export async function saveAppStateToFirestore(
     try {
       await setDoc(docRef, sanitizedState);
     } catch (primaryErr: any) {
-      if (checkFirestoreQuotaExceeded(primaryErr)) {
-        return true;
-      }
       // Emergency retry: If document size or write limit error occurred, force strip all data URLs
       if (
         primaryErr?.message?.includes('size') ||
@@ -476,14 +401,38 @@ export async function saveAppStateToFirestore(
       }
     }
 
+    // Concurrently maintain a lightweight, dedicated backup for classes and students
+    if (userId) {
+      try {
+        const classesDocRef = doc(db, 'classes_data', userId);
+        const optimizedStudents = Array.isArray(state.students)
+          ? state.students.map((s) => {
+              if (s.avatar && typeof s.avatar === 'string' && s.avatar.startsWith('data:') && s.avatar.length > 12000) {
+                return { ...s, avatar: '' };
+              }
+              return s;
+            })
+          : [];
+
+        await setDoc(classesDocRef, {
+          userId,
+          ownerName: meta?.teacherName || state.ownerName || state.teacher?.name || '',
+          classes: sanitizeFirestoreData(state.classes || []),
+          students: sanitizeFirestoreData(optimizedStudents),
+          updatedAt: nowIso
+        });
+      } catch (backupErr) {
+        console.warn('Dedicated classes_data backup notice:', backupErr);
+      }
+    }
+
     return true;
   } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, state saved to local cache.');
       return false;
     }
-    console.warn('Save app state Firestore notice:', err?.message || err);
+    console.error('Save app state Firestore error:', err?.message || err);
     return false;
   }
 }
@@ -498,9 +447,6 @@ export async function syncClassesAndStudentsToFirestore(
   meta?: { teacherName?: string }
 ): Promise<boolean> {
   if (!userId) return false;
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
   const nowIso = new Date().toISOString();
 
   try {
@@ -529,9 +475,8 @@ export async function syncClassesAndStudentsToFirestore(
     }
 
     return true;
-  } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
-    console.warn('Direct syncClassesAndStudentsToFirestore notice:', err?.message || err);
+  } catch (err) {
+    console.error('Direct syncClassesAndStudentsToFirestore error:', err);
     return false;
   }
 }
@@ -602,9 +547,6 @@ export function subscribeToUserWorkspace(
   key: string,
   onRemoteUpdate: (state: AppState) => void
 ): () => void {
-  if (shouldSkipFirestoreWrite()) {
-    return () => {};
-  }
   const docRef = doc(db, 'workspaces', key);
   return onSnapshot(
     docRef,
@@ -618,8 +560,7 @@ export function subscribeToUserWorkspace(
       }
     },
     (err) => {
-      checkFirestoreQuotaExceeded(err);
-      console.warn('Real-time workspace sync listener notice:', err?.message || err);
+      console.warn('Real-time workspace sync listener notice:', err);
     }
   );
 }
@@ -631,9 +572,6 @@ export function subscribeToUserKhdh(
   userId: string,
   onRemoteUpdate: (data: any) => void
 ): () => void {
-  if (shouldSkipFirestoreWrite()) {
-    return () => {};
-  }
   const docRef = doc(db, 'khdh_data', userId || 'shared');
   return onSnapshot(
     docRef,
@@ -646,8 +584,7 @@ export function subscribeToUserKhdh(
       }
     },
     (err) => {
-      checkFirestoreQuotaExceeded(err);
-      console.warn('Real-time KHDH listener notice:', err?.message || err);
+      console.warn('Real-time KHDH listener notice:', err);
     }
   );
 }
@@ -681,9 +618,6 @@ export async function saveKhdhDataToFirestore(
     configuredClasses?: ConfiguredClass[];
   }
 ): Promise<boolean> {
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
   const sanitized = sanitizeFirestoreData(data);
   try {
     const docRef = doc(db, 'khdh_data', userId || 'shared');
@@ -694,7 +628,6 @@ export async function saveKhdhDataToFirestore(
     });
     return true;
   } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, KHDH data saved locally only.');
       return false;
@@ -733,9 +666,6 @@ export async function saveLessonPlansToFirestore(
   userId: string,
   plans: DetailedLessonPlan[]
 ): Promise<boolean> {
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
   const sanitized = sanitizeFirestoreData({ plans });
   try {
     const docRef = doc(db, 'lesson_plans', userId || 'shared');
@@ -746,7 +676,6 @@ export async function saveLessonPlansToFirestore(
     });
     return true;
   } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, Lesson Plans saved locally only.');
       return false;
@@ -797,9 +726,6 @@ export async function fetchSystemConfig(): Promise<any> {
  * Save global system configuration
  */
 export async function saveSystemConfig(config: any): Promise<boolean> {
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
   try {
     const docRef = doc(db, 'system', 'config');
     await setDoc(docRef, {
@@ -807,9 +733,8 @@ export async function saveSystemConfig(config: any): Promise<boolean> {
       updatedAt: new Date().toISOString()
     });
     return true;
-  } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
-    console.warn('Failed to save system config:', err);
+  } catch (err) {
+    console.error('Failed to save system config:', err);
     return false;
   }
 }
@@ -878,25 +803,17 @@ export async function fetchContactInfoFromFirestore(): Promise<ContactInfo> {
 }
 
 export async function saveContactInfoToFirestore(info: ContactInfo): Promise<boolean> {
-  const dataToSave = {
-    ...info,
-    updatedAt: new Date().toISOString()
-  };
   try {
+    const dataToSave = {
+      ...info,
+      updatedAt: new Date().toISOString()
+    };
     localStorage.setItem(SYSTEM_CONTACT_KEY, JSON.stringify(dataToSave));
-  } catch (e) {}
-
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
-
-  try {
     const docRef = doc(db, 'system', 'contact');
     await setDoc(docRef, dataToSave);
     return true;
-  } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
-    console.warn('Failed to save contact info to firestore:', err);
+  } catch (err) {
+    console.error('Failed to save contact info to firestore:', err);
     return false;
   }
 }
@@ -913,10 +830,6 @@ export async function saveSharedGameToFirestore(shareId: string, gameData: any):
     console.warn('Failed to save shared game to local storage:', e);
   }
 
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
-
   try {
     const docRef = doc(db, 'shared_dragdrop_games', shareId);
     await setDoc(docRef, {
@@ -925,8 +838,7 @@ export async function saveSharedGameToFirestore(shareId: string, gameData: any):
       createdAt: new Date().toISOString()
     });
     return true;
-  } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
+  } catch (err) {
     console.warn('Failed to save shared game to Firestore:', err);
     return false;
   }
@@ -962,279 +874,4 @@ export async function fetchSharedGameFromFirestore(shareId: string): Promise<any
   }
 
   return null;
-}
-
-// ==========================================
-// URGENT REPORTS (BÁO CÁO GẤP SỐ LIỆU EXCEL)
-// ==========================================
-
-const URGENT_REPORT_CACHE_PREFIX = 'urgent_report_cache_';
-
-/**
- * Helper to get document reference in the workspaces collection
- */
-function getReportDocRef(reportId: string) {
-  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
-  return doc(db, 'urgent_reports', docKey);
-}
-
-/**
- * Save an Urgent Report to Firestore with real-time sync & local cache
- */
-export async function saveUrgentReportToFirestore(report: UrgentReportItem): Promise<boolean> {
-  const docKey = report.id.startsWith('report_') ? report.id : `report_${report.id}`;
-  try {
-    localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${report.id}`, JSON.stringify(report));
-  } catch (e) {
-    console.warn('Failed to cache urgent report in localStorage:', e);
-  }
-
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
-
-  const sanitized = sanitizeFirestoreData({
-    ...report,
-    updatedAt: new Date().toISOString()
-  });
-
-  try {
-    const docRef = getReportDocRef(report.id);
-    await setDoc(docRef, sanitized);
-  } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
-    console.warn(`Firestore save notice for urgent_reports/${docKey}:`, err);
-  }
-
-  return true;
-}
-
-/**
- * Fetch a single Urgent Report from Firestore
- */
-export async function fetchUrgentReportFromFirestore(reportId: string): Promise<UrgentReportItem | null> {
-  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
-
-  // 1. Try urgent_reports collection
-  try {
-    const docRef = getReportDocRef(reportId);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data() as UrgentReportItem;
-      try {
-        localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
-      } catch (e) {}
-      return data;
-    }
-  } catch (err) {
-    console.warn(`Firestore read warning for urgent_reports/${docKey}:`, err);
-  }
-
-  // 2. Try workspaces collection fallback
-  try {
-    const wsRef = doc(db, 'workspaces', docKey);
-    const snap = await getDoc(wsRef);
-    if (snap.exists()) {
-      const data = snap.data() as UrgentReportItem;
-      try {
-        localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
-      } catch (e) {}
-      return data;
-    }
-  } catch (err) {
-    console.warn(`Firestore read warning for workspaces/${docKey}:`, err);
-  }
-
-  // 3. Fallback to local storage cache if network is slow/offline
-  try {
-    const cached = localStorage.getItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
-    if (cached) {
-      return JSON.parse(cached);
-    }
-  } catch (e) {}
-
-  return null;
-}
-
-/**
- * Subscribe to an Urgent Report in real-time
- */
-export function subscribeToUrgentReport(
-  reportId: string,
-  onUpdate: (report: UrgentReportItem | null) => void
-): () => void {
-  if (shouldSkipFirestoreWrite()) {
-    return () => {};
-  }
-  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
-  const docRef = getReportDocRef(reportId);
-
-  return onSnapshot(
-    docRef,
-    (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as UrgentReportItem;
-        try {
-          localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
-        } catch (e) {}
-        onUpdate(data);
-      } else {
-        // Attempt fallback fetch from workspaces
-        fetchUrgentReportFromFirestore(reportId).then((fallback) => {
-          if (fallback) onUpdate(fallback);
-          else onUpdate(null);
-        });
-      }
-    },
-    (err) => {
-      checkFirestoreQuotaExceeded(err);
-      console.warn(`Real-time listener notice for urgent_reports/${docKey}:`, err?.message || err);
-    }
-  );
-}
-
-/**
- * Delete an Urgent Report from Firestore
- */
-export async function deleteUrgentReportFromFirestore(reportId: string): Promise<boolean> {
-  const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
-  try {
-    localStorage.removeItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
-    localStorage.removeItem(`${URGENT_REPORT_CACHE_PREFIX}${docKey}`);
-  } catch (e) {}
-
-  if (shouldSkipFirestoreWrite()) {
-    return true;
-  }
-
-  try {
-    const docRef = getReportDocRef(reportId);
-    await deleteDoc(docRef);
-  } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
-    console.warn(`Delete notice for urgent_reports/${docKey}:`, err);
-  }
-
-  try {
-    const wsRef = doc(db, 'workspaces', docKey);
-    await deleteDoc(wsRef);
-  } catch (err: any) {
-    checkFirestoreQuotaExceeded(err);
-    console.warn(`Delete notice for workspaces/${docKey}:`, err);
-  }
-
-  return true;
-}
-
-/**
- * Delete multiple Urgent Reports from Firestore in bulk
- */
-export async function deleteMultipleUrgentReportsFromFirestore(reportIds: string[]): Promise<boolean> {
-  try {
-    await Promise.all(reportIds.map((id) => deleteUrgentReportFromFirestore(id)));
-    return true;
-  } catch (err) {
-    console.warn('Error bulk deleting reports:', err);
-    return false;
-  }
-}
-
-/**
- * Delete a specific row from an Urgent Report
- */
-export async function deleteReportRowFromFirestore(
-  reportId: string,
-  rowId: string
-): Promise<{ success: boolean; report?: UrgentReportItem; error?: string }> {
-  try {
-    const current = await fetchUrgentReportFromFirestore(reportId);
-    if (!current) {
-      return { success: false, error: 'Không tìm thấy mẫu báo cáo.' };
-    }
-
-    const updatedRows = current.rows.filter((r) => r.id !== rowId);
-    const updatedReport: UrgentReportItem = {
-      ...current,
-      rows: updatedRows,
-      submissionsCount: updatedRows.filter((r) => r._isComplete).length,
-      updatedAt: new Date().toISOString()
-    };
-
-    await saveUrgentReportToFirestore(updatedReport);
-    return { success: true, report: updatedReport };
-  } catch (err: any) {
-    console.error('Error deleting report row:', err);
-    return { success: false, error: err?.message || 'Không thể xóa dòng này' };
-  }
-}
-
-/**
- * Submit / Update a single row in an Urgent Report from a shared public or internal form
- */
-export async function submitReportRowToFirestore(
-  reportId: string,
-  submittedRow: ReportRow,
-  isNewRow: boolean,
-  submitterName?: string
-): Promise<{ success: boolean; report?: UrgentReportItem; error?: string }> {
-  try {
-    // 1. Fetch current report state
-    const current = await fetchUrgentReportFromFirestore(reportId);
-    if (!current) {
-      return { success: false, error: 'Không tìm thấy mẫu báo cáo trên hệ thống.' };
-    }
-
-    if (current.status === 'closed') {
-      return { success: false, error: 'Mẫu báo cáo này đã khóa nhận số liệu!' };
-    }
-
-    const nowIso = new Date().toISOString();
-    const updatedRows = [...current.rows];
-
-    if (isNewRow) {
-      // Append new row
-      updatedRows.push({
-        ...submittedRow,
-        _submittedAt: nowIso,
-        _submittedBy: submitterName || 'Người dùng',
-        _isComplete: true
-      });
-    } else {
-      // Update existing row matching id
-      const index = updatedRows.findIndex((r) => r.id === submittedRow.id);
-      if (index >= 0) {
-        updatedRows[index] = {
-          ...updatedRows[index],
-          ...submittedRow,
-          _submittedAt: nowIso,
-          _submittedBy: submitterName || updatedRows[index]._submittedBy || 'Người dùng',
-          _isComplete: true
-        };
-      } else {
-        updatedRows.push({
-          ...submittedRow,
-          _submittedAt: nowIso,
-          _submittedBy: submitterName || 'Người dùng',
-          _isComplete: true
-        });
-      }
-    }
-
-    const updatedReport: UrgentReportItem = {
-      ...current,
-      rows: updatedRows,
-      submissionsCount: (current.submissionsCount || 0) + 1,
-      updatedAt: nowIso
-    };
-
-    const saved = await saveUrgentReportToFirestore(updatedReport);
-    if (saved) {
-      return { success: true, report: updatedReport };
-    } else {
-      return { success: false, error: 'Không thể ghi số liệu lên Cloud Firestore.' };
-    }
-  } catch (err: any) {
-    console.error('submitReportRowToFirestore error:', err);
-    return { success: false, error: err?.message || 'Lỗi khi gửi số liệu báo cáo.' };
-  }
 }

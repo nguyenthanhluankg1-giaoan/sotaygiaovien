@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   BookOpen,
   ClipboardList,
-  CalendarDays,
   Plus,
   Search,
   Calendar,
@@ -56,14 +55,12 @@ import {
   formatAdministrativeHtmlText,
   normalizeAdministrativeText
 } from '../utils/meetingDocxExport';
-import { MeetingScheduleTab } from './MeetingScheduleTab';
 
 interface MeetingsModuleProps {
   state: AppState;
   onUpdateState: (updater: (prev: AppState) => AppState) => void;
   currentUser?: UserAccount | null;
-  initialTab?: 'personal' | 'department' | 'schedule';
-  onNavigate?: (page: string) => void;
+  initialTab?: 'personal' | 'department';
 }
 
 const CATEGORY_OPTIONS = [
@@ -226,10 +223,9 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
   state,
   onUpdateState,
   currentUser,
-  initialTab = 'personal',
-  onNavigate
+  initialTab = 'personal'
 }) => {
-  const [activeTab, setActiveTab] = useState<'personal' | 'department' | 'schedule'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'personal' | 'department'>(initialTab);
 
   React.useEffect(() => {
     if (initialTab) {
@@ -1045,90 +1041,8 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Module Navigation Tabs */}
-      <div className="flex items-center gap-1.5 p-1 bg-white/95 backdrop-blur-md rounded-2xl border border-teal-200/90 shadow-2xs overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setActiveTab('personal')}
-          className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'personal'
-              ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-teal-800 hover:bg-teal-50/70'
-          }`}
-        >
-          <BookOpen className="w-4 h-4" />
-          <span>Sổ Họp Cá Nhân</span>
-          <span
-            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-              activeTab === 'personal' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {state.personalMeetings?.length || 0}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('department')}
-          className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'department'
-              ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-teal-800 hover:bg-teal-50/70'
-          }`}
-        >
-          <ClipboardList className="w-4 h-4" />
-          <span>Biên Bản Tổ Khối</span>
-          <span
-            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-              activeTab === 'department' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {state.departmentMeetings?.length || 0}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('schedule')}
-          className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'schedule'
-              ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-teal-800 hover:bg-teal-50/70'
-          }`}
-        >
-          <CalendarDays className="w-4 h-4" />
-          <span>Lịch Họp Chuyên Môn</span>
-          <span
-            className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-              activeTab === 'schedule' ? 'bg-amber-400 text-amber-950' : 'bg-teal-100 text-teal-800'
-            }`}
-          >
-            LỊCH HỌP
-          </span>
-        </button>
-      </div>
-
-      {activeTab === 'schedule' ? (
-        <MeetingScheduleTab
-          state={state}
-          onUpdateState={onUpdateState}
-          currentUser={currentUser}
-          onNavigate={onNavigate}
-          onOpenCreateDepartmentMeeting={() => {
-            setActiveTab('department');
-            setEditingDepartment(null);
-            setIsDepartmentModalOpen(true);
-          }}
-          onOpenEditDepartmentMeeting={(meeting) => {
-            setActiveTab('department');
-            setEditingDepartment(meeting);
-            setIsDepartmentModalOpen(true);
-          }}
-        />
-      ) : (
-        <>
-          {/* Compact Streamlined Control Toolbar */}
-          <div className="bg-white/95 backdrop-blur-md border border-teal-200/80 rounded-2xl p-2.5 sm:px-4 sm:py-3 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-2.5">
+      {/* Compact Streamlined Control Toolbar */}
+      <div className="bg-white/95 backdrop-blur-md border border-teal-200/80 rounded-2xl p-2.5 sm:px-4 sm:py-3 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-2.5">
         {/* Left: Search & Filter */}
         <div className="flex items-center gap-2 w-full sm:w-auto flex-1 min-w-0">
           <div className="relative flex-1 sm:max-w-xs">
@@ -2014,8 +1928,6 @@ export const MeetingsModule: React.FC<MeetingsModuleProps> = ({
             </div>
           )}
         </div>
-      )}
-        </>
       )}
 
       {/* ========================================== */}

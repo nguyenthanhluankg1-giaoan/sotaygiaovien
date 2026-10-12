@@ -81,34 +81,12 @@ export interface TimetableEntry {
   time: string;
 }
 
-export interface DepartmentMeetingSchedule {
-  dayOfWeek?: number; // 0 = Thứ Hai, 1 = Thứ Ba, 2 = Thứ Tư, 3 = Thứ Năm, 4 = Thứ Sáu
-  time?: string; // '14:00 - 16:30'
-  session?: 'morning' | 'afternoon';
-  location?: string;
-  departmentName?: string;
-  focusTopic?: string;
-  enabled?: boolean;
-  dismissedUntil?: string;
-}
-
-export const DEFAULT_DEPARTMENT_MEETING_SCHEDULE: DepartmentMeetingSchedule = {
-  dayOfWeek: 3, // Thứ Năm
-  time: '14:00 - 16:30',
-  session: 'afternoon',
-  location: 'Phòng họp Chuyên môn / Thư viện',
-  departmentName: 'Tổ Chuyên Môn Khối',
-  focusTopic: 'Sinh hoạt chuyên môn định kỳ & đánh giá công tác tuần',
-  enabled: true
-};
-
 export interface TimetableConfig {
   morning: boolean;
   afternoon: boolean;
   morningCount: number;
   afternoonCount: number;
   entries: TimetableEntry[];
-  departmentMeetingSchedule?: DepartmentMeetingSchedule;
 }
 
 export interface Reward {
@@ -239,7 +217,6 @@ export interface AppState {
   personalMeetings?: PersonalMeetingItem[];
   departmentMeetings?: DepartmentMeetingItem[];
   meetingFolders?: MeetingFolder[];
-  urgentReports?: UrgentReportItem[];
 }
 
 export interface MeetingFolder {
@@ -588,51 +565,6 @@ export interface DetailedLessonPlan {
 export type Level = string;
 export interface QuizResponse {
   questions: QuizQuestion[];
-}
-
-// ==========================================
-// THƯ MỤC BÁO CÁO GẤP SỐ LIỆU TỪ FILE EXCEL & FORM CHIA SẺ
-// ==========================================
-
-export interface ReportColumn {
-  id: string; // Khóa cột, vd: 'col_0', 'col_1'
-  name: string; // Tên hiển thị (tiêu đề cột từ Excel)
-  type: 'text' | 'number' | 'select' | 'date'; // Loại dữ liệu
-  options?: string[]; // Danh sách lựa chọn nếu là loại select
-  required?: boolean; // Bắt buộc nhập hay không
-  isIdentifier?: boolean; // Cột dùng để định danh đối tượng (vd: Cột Lớp, Họ và tên)
-  isInputField?: boolean; // Cột cho phép điền số liệu (được đưa vào form)
-  defaultValue?: string | number;
-  description?: string; // Gợi ý hoặc hướng dẫn nhập
-}
-
-export interface ReportRow {
-  id: string; // ID duy nhất của dòng, vd: 'row_1'
-  [key: string]: any; // Dữ liệu theo cột
-  _submittedAt?: string; // Thời điểm cập nhật cuối
-  _submittedBy?: string; // Người cập nhật (Họ tên hoặc Lớp)
-  _isComplete?: boolean; // Đã điền đủ các cột bắt buộc hay chưa
-}
-
-export interface UrgentReportItem {
-  id: string;
-  title: string; // Tên báo cáo, ví dụ: "Báo cáo số lượng học sinh tham gia BHYT năm học 2024-2025"
-  description?: string; // Hướng dẫn, chỉ đạo báo cáo
-  urgentLevel?: 'normal' | 'urgent' | 'very_urgent'; // 'normal': Thường | 'urgent': Khẩn | 'very_urgent': Hỏa tốc
-  deadline?: string; // Hạn chót nộp báo cáo (ISO date hoặc chuỗi ngày giờ)
-  creatorId: string;
-  creatorName: string;
-  status: 'open' | 'closed'; // 'open': Đang nhận số liệu | 'closed': Đã khóa nhận báo cáo
-  fileName?: string; // Tên file Excel gốc
-  sheetNames?: string[]; // Danh sách các sheet trong file Excel
-  activeSheetName?: string; // Tên sheet hiện tại
-  columns: ReportColumn[];
-  rows: ReportRow[];
-  allowNewRows?: boolean; // Cho phép người nhập thêm dòng mới hay chỉ chọn dòng có sẵn
-  identifierColumnId?: string; // Cột dùng để chọn nhanh dòng của mình
-  createdAt: string;
-  updatedAt: string;
-  submissionsCount?: number;
 }
 
 

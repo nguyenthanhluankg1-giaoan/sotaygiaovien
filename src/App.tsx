@@ -57,8 +57,6 @@ import { DragDropTab } from './components/tabs/DragDropTab';
 import { WorksheetsTab } from './components/tabs/WorksheetsTab';
 import { KhdhModule } from './components/KhdhModule';
 import { MeetingsModule } from './components/MeetingsModule';
-import { ReportsModule } from './components/ReportsModule';
-import { SharedReportFormView } from './components/SharedReportFormView';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getSavedSessionUser());
@@ -74,15 +72,6 @@ export default function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [contactInfo, setContactInfo] = useState<ContactInfo>(() => getLocalCachedContactInfo());
   const [userApiKey, setUserApiKey] = useState<string>(() => getStoredApiKey(getSavedSessionUser()));
-  const [sharedReportId, setSharedReportId] = useState<string | null>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        return params.get('reportId') || params.get('report') || null;
-      }
-    } catch {}
-    return null;
-  });
 
   // References to guarantee no race conditions across browsers
   const cloudLoadedUserRef = useRef<string | null>(null);
@@ -164,12 +153,11 @@ export default function App() {
               return Array.from(map.values());
             };
 
-            const mergedPersonalMeetings = cloudState.personalMeetings !== undefined ? cloudState.personalMeetings : (prev.personalMeetings || []);
-            const mergedDepartmentMeetings = cloudState.departmentMeetings !== undefined ? cloudState.departmentMeetings : (prev.departmentMeetings || []);
-            const mergedMeetingFolders = cloudState.meetingFolders !== undefined ? cloudState.meetingFolders : (prev.meetingFolders || []);
-            const mergedDragDropGames = cloudState.dragDropGames !== undefined ? cloudState.dragDropGames : (prev.dragDropGames || []);
-            const mergedWorksheets = cloudState.worksheets !== undefined ? cloudState.worksheets : (prev.worksheets || []);
-            const mergedUrgentReports = cloudState.urgentReports !== undefined ? cloudState.urgentReports : (prev.urgentReports || []);
+            const mergedPersonalMeetings = mergeById(cloudState.personalMeetings || [], prev.personalMeetings || []);
+            const mergedDepartmentMeetings = mergeById(cloudState.departmentMeetings || [], prev.departmentMeetings || []);
+            const mergedMeetingFolders = mergeById(cloudState.meetingFolders || [], prev.meetingFolders || []);
+            const mergedDragDropGames = mergeById(cloudState.dragDropGames || [], prev.dragDropGames || []);
+            const mergedWorksheets = mergeById(cloudState.worksheets || [], prev.worksheets || []);
 
             const mergedClasses = (cloudState.classes && cloudState.classes.length > 0) ? cloudState.classes : (prev.classes || []);
             const mergedStudents = (cloudState.students && cloudState.students.length > 0) ? cloudState.students : (prev.students || []);
@@ -179,12 +167,11 @@ export default function App() {
               ...cloudState,
               classes: mergedClasses,
               students: mergedStudents,
-              personalMeetings: mergedPersonalMeetings,
-              departmentMeetings: mergedDepartmentMeetings,
-              meetingFolders: mergedMeetingFolders,
+              personalMeetings: mergedPersonalMeetings.length > 0 ? mergedPersonalMeetings : (prev.personalMeetings || []),
+              departmentMeetings: mergedDepartmentMeetings.length > 0 ? mergedDepartmentMeetings : (prev.departmentMeetings || []),
+              meetingFolders: mergedMeetingFolders.length > 0 ? mergedMeetingFolders : (prev.meetingFolders || []),
               dragDropGames: mergedDragDropGames,
-              worksheets: mergedWorksheets,
-              urgentReports: mergedUrgentReports
+              worksheets: mergedWorksheets
             };
 
             saveStoredState(savedUser, reconciledState);
@@ -205,19 +192,14 @@ export default function App() {
 
     initializeFromCloud();
 
-    // Check if user accessed via shared game link or shared report form link (URL search parameters)
+    // Check if user accessed via shared game link (URL search parameters)
     try {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab') || params.get('page');
       const shareIdParam = params.get('shareId') || params.get('gameId');
       const gameParam = params.get('game');
-      const reportIdParam = params.get('reportId') || params.get('report');
 
-      if (reportIdParam) {
-        setSharedReportId(reportIdParam);
-      } else if (tabParam === 'reports') {
-        setState((prev) => ({ ...prev, currentPage: 'reports' }));
-      } else if (tabParam === 'dragdrop' || shareIdParam || gameParam === 'dragdrop') {
+      if (tabParam === 'dragdrop' || shareIdParam || gameParam === 'dragdrop') {
         setState((prev) => ({ ...prev, currentPage: 'dragdrop' }));
       }
     } catch (e) {
@@ -250,7 +232,7 @@ export default function App() {
     return () => unsubscribe();
   }, [currentUser?.id]);
 
-  // Auto-sync state: immediate local storage + debounced background Cloud Firestore save (2.5s)
+  // Ultra-fast auto-sync whenever state changes: immediate local storage + 150ms background Cloud Firestore save
   useEffect(() => {
     saveStoredState(currentUser, state);
 
@@ -279,11 +261,11 @@ export default function App() {
           );
         }
       } catch (err) {
-        console.warn('Auto-save firestore notice:', err);
+        console.warn('Auto-save firestore error:', err);
       } finally {
         setIsCloudSaving(false);
       }
-    }, 2500);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [state, currentUser]);
@@ -342,20 +324,8 @@ export default function App() {
     await saveSystemConfig({ schoolLogo: logo });
   };
 
-  const handleUpdateState = (updater: (prev: AppState) => AppState, immediateSave: boolean = false) => {
-    setState((prev) => {
-      const next = updater(prev);
-      saveStoredState(currentUser, next);
-      if (immediateSave) {
-        const wsKey = getUserWorkspaceKey(currentUser);
-        saveAppStateToFirestore(wsKey, next, {
-          userId: currentUser?.id || 'guest',
-          teacherName: currentUser?.name || 'Giáo viên',
-          role: currentUser?.role || 'guest'
-        }).catch(console.warn);
-      }
-      return next;
-    });
+  const handleUpdateState = (updater: (prev: AppState) => AppState) => {
+    setState((prev) => updater(prev));
   };
 
   const handleResetState = () => {
@@ -429,22 +399,6 @@ export default function App() {
     setUsers(list);
     setDbConnected(true);
   };
-
-  // If accessed directly via shared report form link or QR code, bypass login screen completely!
-  if (sharedReportId) {
-    return (
-      <SharedReportFormView
-        reportId={sharedReportId}
-        currentUser={currentUser}
-        onBackToApp={() => {
-          setSharedReportId(null);
-          try {
-            window.history.replaceState({}, '', window.location.pathname);
-          } catch {}
-        }}
-      />
-    );
-  }
 
   // Check if URL contains student tugTeam parameter, page=film, or game room param for direct student/guest access
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
@@ -612,11 +566,6 @@ export default function App() {
           title: 'Thư Mục Sổ Họp & Biên Bản Tổ Khối',
           subtitle: 'Sổ họp cá nhân và quản lý biên bản họp tổ khối chuyên môn'
         };
-      case 'reports':
-        return {
-          title: 'Báo Cáo Gấp Số Liệu Bằng Excel & Form Trực Tuyến',
-          subtitle: 'Tải file Excel mẫu lên, hiển thị dữ liệu bảng tính, tự động tạo Form và chia sẻ thu thập số liệu siêu tốc'
-        };
       default:
         return {
           title: 'Lớp Học Thông Minh',
@@ -628,22 +577,6 @@ export default function App() {
   const pageInfo = getPageInfo();
   const currentUserExpInfo = getAccountExpirationInfo(currentUser);
   const isCurrentUserExpired = currentUser?.role !== 'admin' && currentUserExpInfo.isExpired;
-
-  // If accessed directly via shared report form link or QR code
-  if (sharedReportId) {
-    return (
-      <SharedReportFormView
-        reportId={sharedReportId}
-        currentUser={currentUser}
-        onBackToApp={() => {
-          setSharedReportId(null);
-          try {
-            window.history.replaceState({}, '', window.location.pathname);
-          } catch {}
-        }}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-br from-teal-50/70 via-emerald-50/40 to-teal-100/30 text-slate-800 flex flex-col lg:flex-row relative">
@@ -764,7 +697,7 @@ export default function App() {
         />
 
         {/* Thanh chọn công cụ Quản lý lớp học, Trò chơi hoặc Sổ họp ở bên phải */}
-        {state.currentPage !== 'khdh' && state.currentPage !== 'reports' && (
+        {state.currentPage !== 'khdh' && (
           ['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(state.currentPage) ? (
             <GamesNavBar
               currentPage={state.currentPage}
@@ -951,14 +884,6 @@ export default function App() {
               onUpdateState={handleUpdateState}
               currentUser={currentUser}
               initialTab={state.currentPage === 'department_meeting' ? 'department' : 'personal'}
-            />
-          )}
-
-          {state.currentPage === 'reports' && (
-            <ReportsModule
-              state={state}
-              onUpdateState={handleUpdateState}
-              currentUser={currentUser}
             />
           )}
         </main>

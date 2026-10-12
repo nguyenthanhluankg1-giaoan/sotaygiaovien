@@ -16,13 +16,11 @@ import {
   UserCheck,
   School,
   Settings,
-  CheckCircle2,
-  CalendarDays
+  CheckCircle2
 } from 'lucide-react';
 import { AppState, Student, UserAccount } from '../../types';
 import { Avatar } from '../Avatar';
 import { ClassBannerBar } from '../ClassBannerBar';
-import { DepartmentMeetingReminderBanner } from '../DepartmentMeetingReminderBanner';
 
 interface HomeTabProps {
   state: AppState;
@@ -137,14 +135,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({ state, onNavigate, onUpdateSta
             </div>
           </div>
         </div>
-
-        {/* Weekly Department Meeting Gentle Reminder Banner for Admin */}
-        <DepartmentMeetingReminderBanner
-          state={state}
-          onNavigate={onNavigate}
-          onUpdateState={onUpdateState}
-          currentUser={currentUser}
-        />
 
         {/* Teachers Overview Table */}
         <div className="p-6 rounded-3xl bg-white border border-slate-200/80 shadow-sm space-y-4">
@@ -313,14 +303,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({ state, onNavigate, onUpdateSta
         studentCount={students.length}
         teacherName={state.teacher.name}
         onNavigate={onNavigate}
-      />
-
-      {/* Weekly Department Meeting Gentle Reminder Banner */}
-      <DepartmentMeetingReminderBanner
-        state={state}
-        onNavigate={onNavigate}
-        onUpdateState={onUpdateState}
-        currentUser={currentUser}
       />
 
       {/* 4 Stat Cards */}
@@ -592,37 +574,29 @@ export const HomeTab: React.FC<HomeTabProps> = ({ state, onNavigate, onUpdateSta
               <p className="text-xs text-slate-500">Các công cụ hỗ trợ trực tiếp trong giờ dạy</p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <button
-                onClick={() => onNavigate('meeting_schedule')}
-                className="p-3 rounded-2xl border-2 border-indigo-100 hover:border-indigo-400 bg-indigo-50/50 hover:bg-indigo-50 text-slate-800 font-bold text-xs flex flex-col items-center text-center gap-1.5 transition-all shadow-sm cursor-pointer"
-              >
-                <CalendarDays className="w-5 h-5 text-indigo-600" />
-                <span>Lịch họp tổ</span>
-              </button>
-
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 onClick={() => onNavigate('attendance')}
-                className="p-3 rounded-2xl border-2 border-teal-100 hover:border-teal-400 bg-teal-50/50 hover:bg-teal-50 text-slate-800 font-bold text-xs flex flex-col items-center text-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                className="p-3.5 rounded-2xl border-2 border-teal-100 hover:border-teal-400 bg-teal-50/50 hover:bg-teal-50 text-slate-800 font-bold text-xs flex flex-col items-center text-center gap-2 transition-all shadow-sm cursor-pointer"
               >
-                <ClipboardCheck className="w-5 h-5 text-teal-600" />
+                <ClipboardCheck className="w-6 h-6 text-teal-600" />
                 <span>Điểm danh lớp</span>
               </button>
 
               <button
                 onClick={() => onNavigate('seating')}
-                className="p-3 rounded-2xl border-2 border-sky-100 hover:border-sky-400 bg-sky-50/50 hover:bg-sky-50 text-slate-800 font-bold text-xs flex flex-col items-center text-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                className="p-3.5 rounded-2xl border-2 border-sky-100 hover:border-sky-400 bg-sky-50/50 hover:bg-sky-50 text-slate-800 font-bold text-xs flex flex-col items-center text-center gap-2 transition-all shadow-sm cursor-pointer"
               >
-                <LayoutGrid className="w-5 h-5 text-sky-600" />
+                <LayoutGrid className="w-6 h-6 text-sky-600" />
                 <span>Sơ đồ chỗ ngồi</span>
               </button>
 
               <button
                 onClick={() => onNavigate('countdown')}
-                className="p-3 rounded-2xl border-2 border-amber-100 hover:border-amber-400 bg-amber-50/50 hover:bg-amber-50 text-slate-800 font-bold text-xs flex flex-col items-center text-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                className="p-3.5 rounded-2xl border-2 border-amber-100 hover:border-amber-400 bg-amber-50/50 hover:bg-amber-50 text-slate-800 font-bold text-xs flex flex-col items-center text-center gap-2 transition-all shadow-sm cursor-pointer"
               >
-                <Timer className="w-5 h-5 text-amber-600" />
-                <span>Đồng hồ đếm</span>
+                <Timer className="w-6 h-6 text-amber-600" />
+                <span>Đồng hồ đếm ngược</span>
               </button>
             </div>
           </div>

@@ -1,13 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeFirestore, getFirestore, doc, getDoc, setDoc, setLogLevel } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-
-// Silence verbose internal Firestore SDK logs when hitting free tier quota limits
-try {
-  setLogLevel('silent');
-} catch (e) {
-  // Ignore if unsupported
-}
 import fileConfig from '../firebase-applet-config.json';
 
 // Support both embedded json config and Vercel/Vite environment variables

@@ -2,7 +2,6 @@ import React, { useRef } from 'react';
 import {
   BookOpen,
   ClipboardList,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -29,8 +28,7 @@ export const MeetingsNavBar: React.FC<MeetingsNavBarProps> = ({
 
   const meetingNavItems = [
     { id: 'personal_meeting', label: 'Sổ họp cá nhân', icon: BookOpen, badge: 'SỔ HỌP' },
-    { id: 'department_meeting', label: 'BIÊN BẢN TỔ KHỐI', icon: ClipboardList, badge: 'BIÊN BẢN' },
-    { id: 'meeting_schedule', label: 'LỊCH HỌP CHUYÊN MÔN', icon: CalendarDays, badge: 'LỊCH HỌP' }
+    { id: 'department_meeting', label: 'BIÊN BẢN TỔ KHỐI', icon: ClipboardList, badge: 'BIÊN BẢN' }
   ];
 
   return (
@@ -46,7 +44,7 @@ export const MeetingsNavBar: React.FC<MeetingsNavBarProps> = ({
               THƯ MỤC SỔ HỌP
             </h3>
             <span className="text-[10px] font-bold text-teal-600 block mt-0.5">
-              3 mục họp & biên bản
+              2 mục họp & biên bản
             </span>
           </div>
         </div>

@@ -27,8 +27,7 @@ import {
   Calendar,
   PhoneCall,
   Move,
-  Cloud,
-  FileSpreadsheet
+  Cloud
 } from 'lucide-react';
 import { UserAccount } from '../types';
 import { Avatar } from './Avatar';
@@ -65,16 +64,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Thư mục hiện tại
-  const [activeFolderState, setActiveFolderState] = useState<'classroom' | 'khdh' | 'games' | 'meetings' | 'reports'>(
-    currentPage === 'khdh'
-      ? 'khdh'
-      : ['personal_meeting', 'department_meeting'].includes(currentPage)
-      ? 'meetings'
-      : currentPage === 'reports'
-      ? 'reports'
-      : ['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(currentPage)
-      ? 'games'
-      : 'classroom'
+  const [activeFolderState, setActiveFolderState] = useState<'classroom' | 'khdh' | 'games' | 'meetings'>(
+    currentPage === 'khdh' ? 'khdh' : ['personal_meeting', 'department_meeting'].includes(currentPage) ? 'meetings' : 'classroom'
   );
 
   useEffect(() => {
@@ -84,9 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       setActiveFolderState('games');
     } else if (['personal_meeting', 'department_meeting'].includes(currentPage)) {
       setActiveFolderState('meetings');
-    } else if (currentPage === 'reports') {
-      setActiveFolderState('reports');
-    } else if (activeFolderState === 'khdh' || activeFolderState === 'games' || activeFolderState === 'meetings' || activeFolderState === 'reports') {
+    } else if (activeFolderState === 'khdh' || activeFolderState === 'games' || activeFolderState === 'meetings') {
       setActiveFolderState('classroom');
     }
   }, [currentPage]);
@@ -130,7 +119,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleSelectClassroomFolder = () => {
     setActiveFolderState('classroom');
-    if (currentPage === 'khdh' || currentPage === 'reports') {
+    if (currentPage === 'khdh') {
       onNavigate('home');
     }
   };
@@ -150,12 +139,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleSelectMeetingsFolder = () => {
     setActiveFolderState('meetings');
     onNavigate('personal_meeting');
-    onClose();
-  };
-
-  const handleSelectReportsFolder = () => {
-    setActiveFolderState('reports');
-    onNavigate('reports');
     onClose();
   };
 
@@ -358,38 +341,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </button>
 
-            {/* 4. Thư mục BÁO CÁO (MỚI) */}
-            <button
-              type="button"
-              onClick={handleSelectReportsFolder}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl transition-all text-left cursor-pointer border ${
-                activeFolder === 'reports'
-                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white border-teal-600 shadow-md shadow-teal-600/20 font-black'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/90 font-bold hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileSpreadsheet
-                  className={`w-4 h-4 shrink-0 ${
-                    activeFolder === 'reports' ? 'text-white' : 'text-emerald-600'
-                  }`}
-                />
-                <span className="text-[13px] tracking-tight truncate font-extrabold uppercase">BÁO CÁO</span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span
-                  className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
-                    activeFolder === 'reports'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                  }`}
-                >
-                  EXCEL
-                </span>
-              </div>
-            </button>
-
-            {/* 5. Thư mục TRÒ CHƠI */}
+            {/* 4. Thư mục TRÒ CHƠI */}
             <button
               type="button"
               onClick={handleSelectGamesFolder}
@@ -466,18 +418,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 <p className="text-[11px] font-medium text-slate-600 leading-snug">
                   Tất cả <span className="font-bold text-teal-700">2 công cụ (Sổ họp cá nhân & Biên bản tổ khối)</span> được hiển thị đầy đủ trên thanh chọn ngang phía trên bên phải.
-                </p>
-              </div>
-            </div>
-          ) : activeFolder === 'reports' ? (
-            <div className="space-y-2 animate-in fade-in duration-150 p-1">
-              <div className="p-3 rounded-2xl bg-teal-50/80 border border-teal-200/80 text-teal-900 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-xs font-black text-teal-800">
-                  <FileSpreadsheet className="w-4 h-4 text-teal-600" />
-                  <span>Thư mục Báo Cáo</span>
-                </div>
-                <p className="text-[11px] font-medium text-slate-600 leading-snug">
-                  Tải file Excel mẫu lên, hiển thị bảng tính ra màn hình, tự động sinh Form và chia sẻ đường link / mã QR để giáo viên dễ dàng nhập số liệu.
                 </p>
               </div>
             </div>

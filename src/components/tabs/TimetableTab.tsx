@@ -1,24 +1,6 @@
 import React, { useState } from 'react';
-import {
-  CalendarDays,
-  Sliders,
-  Plus,
-  Trash2,
-  Clock,
-  BookOpen,
-  Users,
-  Bell,
-  MapPin,
-  Settings2,
-  CheckCircle2
-} from 'lucide-react';
-import {
-  AppState,
-  TimetableEntry,
-  DAYS_OF_WEEK,
-  DepartmentMeetingSchedule,
-  DEFAULT_DEPARTMENT_MEETING_SCHEDULE
-} from '../../types';
+import { CalendarDays, Sliders, Plus, Trash2, Clock, BookOpen } from 'lucide-react';
+import { AppState, TimetableEntry, DAYS_OF_WEEK } from '../../types';
 import { uid } from '../../utils/helpers';
 
 interface TimetableTabProps {
@@ -184,56 +166,6 @@ export const TimetableTab: React.FC<TimetableTabProps> = ({ state, onUpdateState
         </button>
       </div>
 
-      {/* Weekly Department Meeting Schedule Card */}
-      {(() => {
-        const sched = timetable.departmentMeetingSchedule || DEFAULT_DEPARTMENT_MEETING_SCHEDULE;
-        const dayName = DAYS_OF_WEEK[sched.dayOfWeek ?? 3] || 'Thứ Năm';
-        const sessionName = sched.session === 'morning' ? 'Buổi Sáng' : 'Buổi Chiều';
-        return (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-teal-50/80 border border-indigo-200/80 shadow-2xs">
-            <div className="flex items-center gap-3">
-              <span className="p-2 rounded-xl bg-indigo-600 text-white shadow-2xs shrink-0">
-                <Users className="w-4 h-4" />
-              </span>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-xs sm:text-sm font-black text-indigo-950">
-                    Lịch Sinh Hoạt Chuyên Môn Tổ:
-                  </h4>
-                  <span className="font-extrabold text-xs text-indigo-700 bg-white/80 px-2 py-0.5 rounded-md border border-indigo-200">
-                    {sessionName} {dayName} ({sched.time})
-                  </span>
-                  <span className="text-xs text-slate-600 flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-slate-400" />
-                    <span>{sched.location}</span>
-                  </span>
-                  {sched.enabled !== false ? (
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      Đang bật nhắc nhở
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                      Tắt nhắc nhở
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-indigo-800/80 mt-0.5">
-                  Được dùng để tự động nhắc nhở hàng tuần trên Bảng điều khiển chính. Thầy/Cô có thể tùy chỉnh hoặc thêm tiết "Sinh hoạt chuyên môn" vào lưới TKB.
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setConfigModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-2xs"
-            >
-              <Settings2 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Chỉnh lịch họp tổ</span>
-            </button>
-          </div>
-        );
-      })()}
-
       {/* Timetable Grid */}
       <div className="bg-white rounded-3xl p-5 border-2 border-teal-100 shadow-md overflow-x-auto">
         <div className="min-w-[760px] border border-slate-200 rounded-2xl overflow-hidden">
@@ -286,33 +218,10 @@ export const TimetableTab: React.FC<TimetableTabProps> = ({ state, onUpdateState
                     } hover:bg-teal-50/60`}
                   >
                     {entry ? (
-                      <div
-                        className={`p-2 rounded-xl border-l-4 shadow-xs hover:shadow-sm transition-all ${
-                          (entry.subject.toLowerCase().includes('chuyên môn') ||
-                            entry.subject.toLowerCase().includes('họp tổ') ||
-                            entry.subject.toLowerCase().includes('shcm'))
-                            ? 'bg-indigo-50/90 border-indigo-600 ring-1 ring-indigo-200'
-                            : 'bg-teal-50 border-teal-600'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1">
-                          {(entry.subject.toLowerCase().includes('chuyên môn') ||
-                            entry.subject.toLowerCase().includes('họp tổ') ||
-                            entry.subject.toLowerCase().includes('shcm')) && (
-                            <span className="text-[10px] shrink-0">👥</span>
-                          )}
-                          <strong
-                            className={`block text-xs font-black truncate ${
-                              (entry.subject.toLowerCase().includes('chuyên môn') ||
-                                entry.subject.toLowerCase().includes('họp tổ') ||
-                                entry.subject.toLowerCase().includes('shcm'))
-                                ? 'text-indigo-950 font-black'
-                                : 'text-slate-800'
-                            }`}
-                          >
-                            {entry.subject}
-                          </strong>
-                        </div>
+                      <div className="p-2 rounded-xl bg-teal-50 border-l-4 border-teal-600 shadow-xs hover:shadow-sm">
+                        <strong className="block text-xs font-black text-slate-800 truncate">
+                          {entry.subject}
+                        </strong>
                         <span className="text-[10px] text-slate-500 block truncate mt-0.5">
                           {entry.time || slot.time}
                         </span>
@@ -523,108 +432,6 @@ export const TimetableTab: React.FC<TimetableTabProps> = ({ state, onUpdateState
                     </select>
                   </div>
                 )}
-              </div>
-
-              {/* Department Meeting Schedule Section */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50/80 to-indigo-50/80 border border-purple-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="font-extrabold text-sm text-purple-950 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-purple-600" />
-                    <span>Lịch Họp Tổ Chuyên Môn Định Kỳ Hàng Tuần</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs font-bold text-purple-900 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={timetable.departmentMeetingSchedule?.enabled !== false}
-                      onChange={(e) =>
-                        onUpdateState((prev) => ({
-                          ...prev,
-                          timetable: {
-                            ...prev.timetable,
-                            departmentMeetingSchedule: {
-                              ...(prev.timetable.departmentMeetingSchedule || DEFAULT_DEPARTMENT_MEETING_SCHEDULE),
-                              enabled: e.target.checked
-                            }
-                          }
-                        }))
-                      }
-                      className="w-4 h-4 rounded text-purple-600"
-                    />
-                    <span>Nhắc nhở</span>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="font-bold text-slate-700 block mb-1">Ngày sinh hoạt:</span>
-                    <select
-                      value={timetable.departmentMeetingSchedule?.dayOfWeek ?? 3}
-                      onChange={(e) =>
-                        onUpdateState((prev) => ({
-                          ...prev,
-                          timetable: {
-                            ...prev.timetable,
-                            departmentMeetingSchedule: {
-                              ...(prev.timetable.departmentMeetingSchedule || DEFAULT_DEPARTMENT_MEETING_SCHEDULE),
-                              dayOfWeek: parseInt(e.target.value)
-                            }
-                          }
-                        }))
-                      }
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-purple-200 font-bold bg-white"
-                    >
-                      {DAYS_OF_WEEK.map((dName, idx) => (
-                        <option key={dName} value={idx}>
-                          {dName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <span className="font-bold text-slate-700 block mb-1">Buổi & Giờ:</span>
-                    <input
-                      type="text"
-                      value={timetable.departmentMeetingSchedule?.time || '14:00 - 16:30'}
-                      onChange={(e) =>
-                        onUpdateState((prev) => ({
-                          ...prev,
-                          timetable: {
-                            ...prev.timetable,
-                            departmentMeetingSchedule: {
-                              ...(prev.timetable.departmentMeetingSchedule || DEFAULT_DEPARTMENT_MEETING_SCHEDULE),
-                              time: e.target.value
-                            }
-                          }
-                        }))
-                      }
-                      placeholder="14:00 - 16:30"
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-purple-200 font-semibold bg-white"
-                    />
-                  </div>
-
-                  <div className="col-span-2">
-                    <span className="font-bold text-slate-700 block mb-1">Địa điểm:</span>
-                    <input
-                      type="text"
-                      value={timetable.departmentMeetingSchedule?.location || 'Phòng họp chuyên môn'}
-                      onChange={(e) =>
-                        onUpdateState((prev) => ({
-                          ...prev,
-                          timetable: {
-                            ...prev.timetable,
-                            departmentMeetingSchedule: {
-                              ...(prev.timetable.departmentMeetingSchedule || DEFAULT_DEPARTMENT_MEETING_SCHEDULE),
-                              location: e.target.value
-                            }
-                          }
-                        }))
-                      }
-                      placeholder="Phòng họp chuyên môn..."
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-purple-200 font-medium bg-white"
-                    />
-                  </div>
-                </div>
               </div>
             </div>
 

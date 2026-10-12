@@ -1,48 +1,5 @@
-import { AppState, DEFAULT_SUBJECTS, Student, UserAccount, QuestionFolder, UrgentReportItem } from '../types';
+import { AppState, DEFAULT_SUBJECTS, Student, UserAccount, QuestionFolder } from '../types';
 import { DEFAULT_QUIZ_QUESTIONS } from '../data/defaultQuestions';
-
-export const DEFAULT_URGENT_REPORTS: UrgentReportItem[] = [
-  {
-    id: 'report_sample_bhyt',
-    title: 'Báo cáo khẩn số liệu học sinh tham gia BHYT đợt 1',
-    description: 'Kính gửi các đồng chí GVCN kiểm tra và cập nhật gấp số lượng học sinh đã nộp tiền BHYT trước 16h30 ngày 15/10/2026 để tổng hợp nộp Cơ quan Bảo hiểm xã hội.',
-    urgentLevel: 'urgent',
-    deadline: '2026-10-15T16:30',
-    creatorId: 'usr_admin',
-    creatorName: 'Quản Trị Viên Hệ Thống',
-    status: 'open',
-    fileName: 'Mau_Bao_Cao_BHYT_Khoi_1_den_5.xlsx',
-    sheetNames: ['Toan_Truong', 'Khoi_1_2', 'Khoi_3_4_5'],
-    activeSheetName: 'Toan_Truong',
-    allowNewRows: false,
-    identifierColumnId: 'col_lop',
-    createdAt: '2026-10-10T08:00:00.000Z',
-    updatedAt: new Date().toISOString(),
-    submissionsCount: 7,
-    columns: [
-      { id: 'col_stt', name: 'STT', type: 'number', required: false, isIdentifier: false, isInputField: false },
-      { id: 'col_lop', name: 'Lớp', type: 'text', required: true, isIdentifier: true, isInputField: false, description: 'Chọn lớp chủ nhiệm' },
-      { id: 'col_gvcn', name: 'Giáo viên chủ nhiệm', type: 'text', required: false, isIdentifier: false, isInputField: false },
-      { id: 'col_tong_hs', name: 'Tổng số HS', type: 'number', required: true, isIdentifier: false, isInputField: false },
-      { id: 'col_da_nop', name: 'Số HS đã nộp BHYT', type: 'number', required: true, isInputField: true, description: 'Nhập số học sinh đã nộp tiền BHYT đợt này' },
-      { id: 'col_chua_nop', name: 'Số HS chưa nộp', type: 'number', required: false, isInputField: true, description: 'Số học sinh còn thiếu hoặc diện miễn giảm' },
-      { id: 'col_so_tien', name: 'Tổng tiền đã thu (VNĐ)', type: 'number', required: false, isInputField: true, description: 'Số tiền thực thu của lớp' },
-      { id: 'col_ghi_chu', name: 'Ghi chú / Khó khăn', type: 'text', required: false, isInputField: true, description: 'Lý do chưa hoàn thành hoặc đề xuất' }
-    ],
-    rows: [
-      { id: 'row_1', col_stt: 1, col_lop: '1A1', col_gvcn: 'Cô Nguyễn Thị Hoa', col_tong_hs: 32, col_da_nop: 32, col_chua_nop: 0, col_so_tien: 28480000, col_ghi_chu: 'Đã hoàn thành 100%', _isComplete: true, _submittedBy: '1A1', _submittedAt: '2026-10-11T09:15:00Z' },
-      { id: 'row_2', col_stt: 2, col_lop: '1A2', col_gvcn: 'Cô Lê Thị Mai', col_tong_hs: 30, col_da_nop: 28, col_chua_nop: 2, col_so_tien: 24920000, col_ghi_chu: 'Còn 2 em hẹn nộp thứ 5', _isComplete: true, _submittedBy: '1A2', _submittedAt: '2026-10-11T14:20:00Z' },
-      { id: 'row_3', col_stt: 3, col_lop: '2A1', col_gvcn: 'Thầy Trần Văn Bình', col_tong_hs: 31, col_da_nop: 31, col_chua_nop: 0, col_so_tien: 27590000, col_ghi_chu: 'Đã nộp cho thủ quỹ', _isComplete: true, _submittedBy: '2A1', _submittedAt: '2026-10-12T08:00:00Z' },
-      { id: 'row_4', col_stt: 4, col_lop: '2A2', col_gvcn: 'Cô Phạm Thị Lan', col_tong_hs: 33, col_da_nop: 30, col_chua_nop: 3, col_so_tien: 26700000, col_ghi_chu: '', _isComplete: true, _submittedBy: '2A2', _submittedAt: '2026-10-12T08:30:00Z' },
-      { id: 'row_5', col_stt: 5, col_lop: '3A1', col_gvcn: 'Thầy Hoàng Văn Hải', col_tong_hs: 29, col_da_nop: 29, col_chua_nop: 0, col_so_tien: 25810000, col_ghi_chu: 'Đạt 100%', _isComplete: true, _submittedBy: '3A1', _submittedAt: '2026-10-12T09:10:00Z' },
-      { id: 'row_6', col_stt: 6, col_lop: '3A2', col_gvcn: 'Cô Vũ Thị Thu', col_tong_hs: 28, col_da_nop: '', col_chua_nop: '', col_so_tien: '', col_ghi_chu: '', _isComplete: false },
-      { id: 'row_7', col_stt: 7, col_lop: '4A1', col_gvcn: 'Thầy Đặng Minh Tuấn', col_tong_hs: 35, col_da_nop: 34, col_chua_nop: 1, col_so_tien: 30260000, col_ghi_chu: '1 em hoàn cảnh khó khăn', _isComplete: true, _submittedBy: '4A1', _submittedAt: '2026-10-12T10:00:00Z' },
-      { id: 'row_8', col_stt: 8, col_lop: '4A2', col_gvcn: 'Cô Bùi Thị Ngân', col_tong_hs: 34, col_da_nop: '', col_chua_nop: '', col_so_tien: '', col_ghi_chu: '', _isComplete: false },
-      { id: 'row_9', col_stt: 9, col_lop: '5A1', col_gvcn: 'Thầy Đỗ Văn Sang', col_tong_hs: 32, col_da_nop: 32, col_chua_nop: 0, col_so_tien: 28480000, col_ghi_chu: 'Hoàn thành tốt', _isComplete: true, _submittedBy: '5A1', _submittedAt: '2026-10-12T10:45:00Z' },
-      { id: 'row_10', col_stt: 10, col_lop: '5A2', col_gvcn: 'Cô Đinh Thị Yến', col_tong_hs: 31, col_da_nop: '', col_chua_nop: '', col_so_tien: '', col_ghi_chu: '', _isComplete: false }
-    ]
-  }
-];
 
 export const DEFAULT_QUESTION_FOLDERS: QuestionFolder[] = [
   {
@@ -312,8 +269,7 @@ export function getDefaultState(): AppState {
     worksheets: [],
     personalMeetings: [...DEFAULT_PERSONAL_MEETINGS],
     departmentMeetings: [...DEFAULT_DEPARTMENT_MEETINGS],
-    meetingFolders: [...DEFAULT_MEETING_FOLDERS],
-    urgentReports: [...DEFAULT_URGENT_REPORTS]
+    meetingFolders: [...DEFAULT_MEETING_FOLDERS]
   };
 }
 
@@ -369,8 +325,7 @@ export function getDefaultStateForUser(user?: UserAccount | null): AppState {
       wheelQuizTimer: 15,
       wheelQuizSubject: 'all',
       wheelQuizShuffleOptions: true,
-      usedQuizQuestionIds: [],
-      urgentReports: [...DEFAULT_URGENT_REPORTS]
+      usedQuizQuestionIds: []
     };
   }
 
@@ -427,8 +382,7 @@ export function getDefaultStateForUser(user?: UserAccount | null): AppState {
     usedQuizQuestionIds: [],
     personalMeetings: [...DEFAULT_PERSONAL_MEETINGS],
     departmentMeetings: [...DEFAULT_DEPARTMENT_MEETINGS],
-    meetingFolders: [...DEFAULT_MEETING_FOLDERS],
-    urgentReports: [...DEFAULT_URGENT_REPORTS]
+    meetingFolders: [...DEFAULT_MEETING_FOLDERS]
   };
 }
 
@@ -488,9 +442,6 @@ export function loadStoredState(user?: UserAccount | null): AppState {
         }
         if (!Array.isArray(parsed.meetingFolders)) {
           parsed.meetingFolders = [...DEFAULT_MEETING_FOLDERS];
-        }
-        if (!Array.isArray(parsed.urgentReports)) {
-          parsed.urgentReports = [...DEFAULT_URGENT_REPORTS];
         }
         return parsed;
       }
