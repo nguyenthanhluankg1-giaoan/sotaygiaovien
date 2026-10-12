@@ -50,7 +50,56 @@ interface FirestoreErrorInfo {
   }
 }
 
+let isFirestoreQuotaExceeded = false;
+
+export function getIsQuotaExceeded(): boolean {
+  return isFirestoreQuotaExceeded;
+}
+
+const quotaListeners: Array<(exceeded: boolean) => void> = [];
+
+export function onQuotaExceededChange(listener: (exceeded: boolean) => void) {
+  quotaListeners.push(listener);
+  // Call immediately with current state
+  if (isFirestoreQuotaExceeded) {
+    listener(true);
+  }
+  return () => {
+    const idx = quotaListeners.indexOf(listener);
+    if (idx >= 0) quotaListeners.splice(idx, 1);
+  };
+}
+
+export function checkAndMarkQuotaExceeded(error: unknown): boolean {
+  if (!error) return false;
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const code = (error as any)?.code;
+  if (
+    code === 'resource-exhausted' ||
+    errMsg.includes('resource-exhausted') ||
+    errMsg.includes('Quota limit exceeded') ||
+    errMsg.includes('Quota exceeded') ||
+    errMsg.includes('Free daily write units') ||
+    errMsg.includes('Free daily read units')
+  ) {
+    if (!isFirestoreQuotaExceeded) {
+      isFirestoreQuotaExceeded = true;
+      console.warn('[Firestore] Quota exceeded detected! Switching seamlessly to LocalStorage fallback mode.');
+      quotaListeners.forEach((fn) => {
+        try {
+          fn(true);
+        } catch (e) {
+          console.error('Quota listener error:', e);
+        }
+      });
+    }
+    return true;
+  }
+  return false;
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  checkAndMarkQuotaExceeded(error);
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -66,8 +115,11 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  }
+  };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  if (isFirestoreQuotaExceeded) {
+    return;
+  }
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -353,6 +405,7 @@ export async function saveAppStateToFirestore(
   state: AppState,
   meta?: { userId?: string; teacherName?: string; role?: string }
 ): Promise<boolean> {
+  if (isFirestoreQuotaExceeded) return false;
   const path = `workspaces/${key}`;
   const nowIso = new Date().toISOString();
   const userId = meta?.userId || state.ownerUserId || '';
@@ -371,6 +424,7 @@ export async function saveAppStateToFirestore(
     try {
       await setDoc(docRef, sanitizedState);
     } catch (primaryErr: any) {
+      if (checkAndMarkQuotaExceeded(primaryErr)) return false;
       // Emergency retry: If document size or write limit error occurred, force strip all data URLs
       if (
         primaryErr?.message?.includes('size') ||
@@ -402,7 +456,7 @@ export async function saveAppStateToFirestore(
     }
 
     // Concurrently maintain a lightweight, dedicated backup for classes and students
-    if (userId) {
+    if (userId && !isFirestoreQuotaExceeded) {
       try {
         const classesDocRef = doc(db, 'classes_data', userId);
         const optimizedStudents = Array.isArray(state.students)
@@ -422,17 +476,19 @@ export async function saveAppStateToFirestore(
           updatedAt: nowIso
         });
       } catch (backupErr) {
+        checkAndMarkQuotaExceeded(backupErr);
         console.warn('Dedicated classes_data backup notice:', backupErr);
       }
     }
 
     return true;
   } catch (err: any) {
+    checkAndMarkQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, state saved to local cache.');
       return false;
     }
-    console.error('Save app state Firestore error:', err?.message || err);
+    console.warn('Save app state Firestore notice:', err?.message || err);
     return false;
   }
 }
@@ -547,6 +603,7 @@ export function subscribeToUserWorkspace(
   key: string,
   onRemoteUpdate: (state: AppState) => void
 ): () => void {
+  if (isFirestoreQuotaExceeded) return () => {};
   const docRef = doc(db, 'workspaces', key);
   return onSnapshot(
     docRef,
@@ -560,7 +617,10 @@ export function subscribeToUserWorkspace(
       }
     },
     (err) => {
-      console.warn('Real-time workspace sync listener notice:', err);
+      checkAndMarkQuotaExceeded(err);
+      if (!isFirestoreQuotaExceeded) {
+        console.warn('Real-time workspace sync listener notice:', err);
+      }
     }
   );
 }
@@ -572,6 +632,7 @@ export function subscribeToUserKhdh(
   userId: string,
   onRemoteUpdate: (data: any) => void
 ): () => void {
+  if (isFirestoreQuotaExceeded) return () => {};
   const docRef = doc(db, 'khdh_data', userId || 'shared');
   return onSnapshot(
     docRef,
@@ -584,7 +645,10 @@ export function subscribeToUserKhdh(
       }
     },
     (err) => {
-      console.warn('Real-time KHDH listener notice:', err);
+      checkAndMarkQuotaExceeded(err);
+      if (!isFirestoreQuotaExceeded) {
+        console.warn('Real-time KHDH listener notice:', err);
+      }
     }
   );
 }
@@ -618,6 +682,7 @@ export async function saveKhdhDataToFirestore(
     configuredClasses?: ConfiguredClass[];
   }
 ): Promise<boolean> {
+  if (isFirestoreQuotaExceeded) return false;
   const sanitized = sanitizeFirestoreData(data);
   try {
     const docRef = doc(db, 'khdh_data', userId || 'shared');
@@ -628,6 +693,7 @@ export async function saveKhdhDataToFirestore(
     });
     return true;
   } catch (err: any) {
+    checkAndMarkQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, KHDH data saved locally only.');
       return false;

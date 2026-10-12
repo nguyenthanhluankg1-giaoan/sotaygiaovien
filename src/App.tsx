@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Folder, ShieldAlert, AlertCircle, RefreshCw, LogOut, PhoneCall } from 'lucide-react';
+import { Folder, ShieldAlert, AlertCircle, RefreshCw, LogOut, PhoneCall, ExternalLink } from 'lucide-react';
 import { AppState, UserAccount, ContactInfo } from './types';
 import {
   loadStoredState,
@@ -22,7 +22,9 @@ import {
   fetchContactInfoFromFirestore,
   saveContactInfoToFirestore,
   getLocalCachedContactInfo,
-  DEFAULT_CONTACT_INFO
+  DEFAULT_CONTACT_INFO,
+  getIsQuotaExceeded,
+  onQuotaExceededChange
 } from './services/dbService';
 
 import { LoginScreen } from './components/LoginScreen';
@@ -35,6 +37,7 @@ import { GuideModal } from './components/GuideModal';
 import { ContactModal } from './components/ContactModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { getStoredApiKey } from './utils/apiKeyStorage';
+import { resolvedFirebaseConfig } from './firebase';
 
 import { HomeTab } from './components/tabs/HomeTab';
 import { AccountsTab } from './components/tabs/AccountsTab';
@@ -72,6 +75,13 @@ export default function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [contactInfo, setContactInfo] = useState<ContactInfo>(() => getLocalCachedContactInfo());
   const [userApiKey, setUserApiKey] = useState<string>(() => getStoredApiKey(getSavedSessionUser()));
+  const [quotaExceeded, setQuotaExceeded] = useState<boolean>(() => getIsQuotaExceeded());
+
+  useEffect(() => {
+    return onQuotaExceededChange((exceeded) => {
+      setQuotaExceeded(exceeded);
+    });
+  }, []);
 
   // References to guarantee no race conditions across browsers
   const cloudLoadedUserRef = useRef<string | null>(null);
@@ -175,12 +185,6 @@ export default function App() {
             };
 
             saveStoredState(savedUser, reconciledState);
-            saveAppStateToFirestore(wsKey, reconciledState, {
-              userId: savedUser?.id || 'guest',
-              teacherName: savedUser?.name || 'Giáo viên',
-              role: savedUser?.role || 'guest'
-            }).catch(console.warn);
-
             return reconciledState;
           });
         }
@@ -265,7 +269,7 @@ export default function App() {
       } finally {
         setIsCloudSaving(false);
       }
-    }, 150);
+    }, 4000);
 
     return () => clearTimeout(timer);
   }, [state, currentUser]);
@@ -695,6 +699,34 @@ export default function App() {
           onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
           onForceCloudSync={() => handleForceSync(state)}
         />
+
+        {/* Firestore Quota Exceeded Alert Banner */}
+        {quotaExceeded && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 sm:p-4 text-amber-950 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-200 text-amber-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div className="text-xs sm:text-sm space-y-0.5">
+                <p className="font-extrabold text-amber-900">
+                  ⚠️ Đã đạt giới hạn dung lượng ghi Cloud Firestore trong ngày (Free daily write units quota limit)
+                </p>
+                <p className="text-amber-800 text-xs">
+                  Dữ liệu của Thầy/Cô vẫn được <strong>tự động lưu an toàn trong Local Storage</strong> trên thiết bị này. Giới hạn ghi của Google Firebase sẽ tự động làm mới vào ngày mai.
+                </p>
+              </div>
+            </div>
+            <a
+              href={`https://console.firebase.google.com/project/${resolvedFirebaseConfig.projectId}/firestore/databases/${resolvedFirebaseConfig.firestoreDatabaseId}/data?openUpgradeDialog=true`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs flex-shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <span>Xem Firebase Console</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        )}
 
         {/* Thanh chọn công cụ Quản lý lớp học, Trò chơi hoặc Sổ họp ở bên phải */}
         {state.currentPage !== 'khdh' && (

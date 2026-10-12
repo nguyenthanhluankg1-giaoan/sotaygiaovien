@@ -243,7 +243,7 @@ export const KhdhModule: React.FC<KhdhModuleProps> = ({
       console.warn('Error saving KHDH local cache:', e);
     }
 
-    // Ultra-fast auto-save to Firestore (150ms)
+    // Auto-save to Firestore (4000ms)
     const timer = setTimeout(() => {
       saveKhdhDataToFirestore(activeUser?.id || 'shared', {
         config,
@@ -252,7 +252,7 @@ export const KhdhModule: React.FC<KhdhModuleProps> = ({
         customizedWeeks,
         configuredClasses
       }).catch((err) => console.warn('Error saving KHDH to Firestore:', err));
-    }, 150);
+    }, 4000);
 
     return () => clearTimeout(timer);
   }, [config, ppctList, timetable, customizedWeeks, configuredClasses, activeUser?.id]);

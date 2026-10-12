@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeFirestore, getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import fileConfig from '../firebase-applet-config.json';
+import { checkAndMarkQuotaExceeded } from './services/dbService';
 
 // Support both embedded json config and Vercel/Vite environment variables
 const env = (import.meta as any).env || {};
@@ -12,8 +13,7 @@ export const resolvedFirebaseConfig = {
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || fileConfig.authDomain,
   firestoreDatabaseId:
     env.VITE_FIREBASE_DATABASE_ID ||
-    fileConfig.firestoreDatabaseId ||
-    'ai-studio-hsgiodc-44aadd2f-354d-4302-9b97-d002d1ac93ec',
+    fileConfig.firestoreDatabaseId,
   storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket,
   messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || fileConfig.messagingSenderId,
   measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || fileConfig.measurementId || '',
@@ -52,6 +52,7 @@ export async function testFirestoreLiveConnection(): Promise<{
       databaseId: resolvedFirebaseConfig.firestoreDatabaseId
     };
   } catch (err: any) {
+    checkAndMarkQuotaExceeded(err);
     const latencyMs = Date.now() - start;
     return {
       connected: false,

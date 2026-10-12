@@ -62,6 +62,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Urgent reports and shared forms collection
+    match /urgent_reports/{reportId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
     // Test connection collection
     match /test/{docId} {
       allow read, write: if true;
