@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Folder, ShieldAlert, AlertCircle, RefreshCw, LogOut, PhoneCall, ExternalLink } from 'lucide-react';
+import { Folder, ShieldAlert, AlertCircle, RefreshCw, LogOut, PhoneCall } from 'lucide-react';
 import { AppState, UserAccount, ContactInfo } from './types';
 import {
   loadStoredState,
@@ -22,9 +22,7 @@ import {
   fetchContactInfoFromFirestore,
   saveContactInfoToFirestore,
   getLocalCachedContactInfo,
-  DEFAULT_CONTACT_INFO,
-  getIsQuotaExceeded,
-  onQuotaExceededChange
+  DEFAULT_CONTACT_INFO
 } from './services/dbService';
 
 import { LoginScreen } from './components/LoginScreen';
@@ -37,7 +35,6 @@ import { GuideModal } from './components/GuideModal';
 import { ContactModal } from './components/ContactModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { getStoredApiKey } from './utils/apiKeyStorage';
-import { resolvedFirebaseConfig } from './firebase';
 
 import { HomeTab } from './components/tabs/HomeTab';
 import { AccountsTab } from './components/tabs/AccountsTab';
@@ -60,6 +57,8 @@ import { DragDropTab } from './components/tabs/DragDropTab';
 import { WorksheetsTab } from './components/tabs/WorksheetsTab';
 import { KhdhModule } from './components/KhdhModule';
 import { MeetingsModule } from './components/MeetingsModule';
+import { ReportsModule } from './components/ReportsModule';
+import { SharedReportFormView } from './components/SharedReportFormView';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getSavedSessionUser());
@@ -75,13 +74,7 @@ export default function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [contactInfo, setContactInfo] = useState<ContactInfo>(() => getLocalCachedContactInfo());
   const [userApiKey, setUserApiKey] = useState<string>(() => getStoredApiKey(getSavedSessionUser()));
-  const [quotaExceeded, setQuotaExceeded] = useState<boolean>(() => getIsQuotaExceeded());
-
-  useEffect(() => {
-    return onQuotaExceededChange((exceeded) => {
-      setQuotaExceeded(exceeded);
-    });
-  }, []);
+  const [sharedReportId, setSharedReportId] = useState<string | null>(null);
 
   // References to guarantee no race conditions across browsers
   const cloudLoadedUserRef = useRef<string | null>(null);
@@ -168,6 +161,7 @@ export default function App() {
             const mergedMeetingFolders = mergeById(cloudState.meetingFolders || [], prev.meetingFolders || []);
             const mergedDragDropGames = mergeById(cloudState.dragDropGames || [], prev.dragDropGames || []);
             const mergedWorksheets = mergeById(cloudState.worksheets || [], prev.worksheets || []);
+            const mergedUrgentReports = mergeById(cloudState.urgentReports || [], prev.urgentReports || []);
 
             const mergedClasses = (cloudState.classes && cloudState.classes.length > 0) ? cloudState.classes : (prev.classes || []);
             const mergedStudents = (cloudState.students && cloudState.students.length > 0) ? cloudState.students : (prev.students || []);
@@ -181,10 +175,17 @@ export default function App() {
               departmentMeetings: mergedDepartmentMeetings.length > 0 ? mergedDepartmentMeetings : (prev.departmentMeetings || []),
               meetingFolders: mergedMeetingFolders.length > 0 ? mergedMeetingFolders : (prev.meetingFolders || []),
               dragDropGames: mergedDragDropGames,
-              worksheets: mergedWorksheets
+              worksheets: mergedWorksheets,
+              urgentReports: mergedUrgentReports.length > 0 ? mergedUrgentReports : (prev.urgentReports || [])
             };
 
             saveStoredState(savedUser, reconciledState);
+            saveAppStateToFirestore(wsKey, reconciledState, {
+              userId: savedUser?.id || 'guest',
+              teacherName: savedUser?.name || 'Giáo viên',
+              role: savedUser?.role || 'guest'
+            }).catch(console.warn);
+
             return reconciledState;
           });
         }
@@ -196,14 +197,19 @@ export default function App() {
 
     initializeFromCloud();
 
-    // Check if user accessed via shared game link (URL search parameters)
+    // Check if user accessed via shared game link or shared report form link (URL search parameters)
     try {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab') || params.get('page');
       const shareIdParam = params.get('shareId') || params.get('gameId');
       const gameParam = params.get('game');
+      const reportIdParam = params.get('reportId') || params.get('report');
 
-      if (tabParam === 'dragdrop' || shareIdParam || gameParam === 'dragdrop') {
+      if (reportIdParam) {
+        setSharedReportId(reportIdParam);
+      } else if (tabParam === 'reports') {
+        setState((prev) => ({ ...prev, currentPage: 'reports' }));
+      } else if (tabParam === 'dragdrop' || shareIdParam || gameParam === 'dragdrop') {
         setState((prev) => ({ ...prev, currentPage: 'dragdrop' }));
       }
     } catch (e) {
@@ -269,7 +275,7 @@ export default function App() {
       } finally {
         setIsCloudSaving(false);
       }
-    }, 4000);
+    }, 2500);
 
     return () => clearTimeout(timer);
   }, [state, currentUser]);
@@ -570,6 +576,11 @@ export default function App() {
           title: 'Thư Mục Sổ Họp & Biên Bản Tổ Khối',
           subtitle: 'Sổ họp cá nhân và quản lý biên bản họp tổ khối chuyên môn'
         };
+      case 'reports':
+        return {
+          title: 'Báo Cáo Gấp Số Liệu Bằng Excel & Form Trực Tuyến',
+          subtitle: 'Tải file Excel mẫu lên, hiển thị dữ liệu bảng tính, tự động tạo Form và chia sẻ thu thập số liệu siêu tốc'
+        };
       default:
         return {
           title: 'Lớp Học Thông Minh',
@@ -581,6 +592,22 @@ export default function App() {
   const pageInfo = getPageInfo();
   const currentUserExpInfo = getAccountExpirationInfo(currentUser);
   const isCurrentUserExpired = currentUser?.role !== 'admin' && currentUserExpInfo.isExpired;
+
+  // If accessed directly via shared report form link or QR code
+  if (sharedReportId) {
+    return (
+      <SharedReportFormView
+        reportId={sharedReportId}
+        currentUser={currentUser}
+        onBackToApp={() => {
+          setSharedReportId(null);
+          try {
+            window.history.replaceState({}, '', window.location.pathname);
+          } catch {}
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-br from-teal-50/70 via-emerald-50/40 to-teal-100/30 text-slate-800 flex flex-col lg:flex-row relative">
@@ -700,36 +727,8 @@ export default function App() {
           onForceCloudSync={() => handleForceSync(state)}
         />
 
-        {/* Firestore Quota Exceeded Alert Banner */}
-        {quotaExceeded && (
-          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 sm:p-4 text-amber-950 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-200">
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-200 text-amber-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div className="text-xs sm:text-sm space-y-0.5">
-                <p className="font-extrabold text-amber-900">
-                  ⚠️ Đã đạt giới hạn dung lượng ghi Cloud Firestore trong ngày (Free daily write units quota limit)
-                </p>
-                <p className="text-amber-800 text-xs">
-                  Dữ liệu của Thầy/Cô vẫn được <strong>tự động lưu an toàn trong Local Storage</strong> trên thiết bị này. Giới hạn ghi của Google Firebase sẽ tự động làm mới vào ngày mai.
-                </p>
-              </div>
-            </div>
-            <a
-              href={`https://console.firebase.google.com/project/${resolvedFirebaseConfig.projectId}/firestore/databases/${resolvedFirebaseConfig.firestoreDatabaseId}/data?openUpgradeDialog=true`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs flex-shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span>Xem Firebase Console</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
-        )}
-
         {/* Thanh chọn công cụ Quản lý lớp học, Trò chơi hoặc Sổ họp ở bên phải */}
-        {state.currentPage !== 'khdh' && (
+        {state.currentPage !== 'khdh' && state.currentPage !== 'reports' && (
           ['games', 'wheel', 'film', 'worksheets', 'dragdrop'].includes(state.currentPage) ? (
             <GamesNavBar
               currentPage={state.currentPage}
@@ -916,6 +915,14 @@ export default function App() {
               onUpdateState={handleUpdateState}
               currentUser={currentUser}
               initialTab={state.currentPage === 'department_meeting' ? 'department' : 'personal'}
+            />
+          )}
+
+          {state.currentPage === 'reports' && (
+            <ReportsModule
+              state={state}
+              onUpdateState={handleUpdateState}
+              currentUser={currentUser}
             />
           )}
         </main>

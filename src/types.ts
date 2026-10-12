@@ -84,19 +84,19 @@ export interface TimetableEntry {
 export interface DepartmentMeetingSchedule {
   enabled?: boolean;
   dayOfWeek: number; // 0 = Thứ Hai, 1 = Thứ Ba, 2 = Thứ Tư, 3 = Thứ Năm, 4 = Thứ Sáu
-  time: string;
   session: 'morning' | 'afternoon';
+  time: string;
   location: string;
   departmentName: string;
-  focusTopic: string;
-  dismissedUntil?: string;
+  focusTopic?: string;
+  dismissedUntil?: string; // ISO YYYY-MM-DD
 }
 
 export const DEFAULT_DEPARTMENT_MEETING_SCHEDULE: DepartmentMeetingSchedule = {
   enabled: true,
   dayOfWeek: 3, // Thứ Năm
-  time: '14:00 - 16:30',
   session: 'afternoon',
+  time: '14:00 - 16:30',
   location: 'Phòng họp chuyên môn',
   departmentName: 'Tổ chuyên môn Khối 3',
   focusTopic: 'Sinh hoạt chuyên môn theo hướng nghiên cứu bài học & đánh giá tuần'

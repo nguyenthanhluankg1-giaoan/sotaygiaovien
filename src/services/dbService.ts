@@ -19,7 +19,10 @@ import {
   LessonPlanRow,
   DetailedLessonPlan,
   ConfiguredClass,
-  ContactInfo
+  ContactInfo,
+  UrgentReportItem,
+  ReportRow,
+  ReportColumn
 } from '../types';
 import { getDefaultState, getDefaultStateForUser } from '../utils/helpers';
 
@@ -50,56 +53,7 @@ interface FirestoreErrorInfo {
   }
 }
 
-let isFirestoreQuotaExceeded = false;
-
-export function getIsQuotaExceeded(): boolean {
-  return isFirestoreQuotaExceeded;
-}
-
-const quotaListeners: Array<(exceeded: boolean) => void> = [];
-
-export function onQuotaExceededChange(listener: (exceeded: boolean) => void) {
-  quotaListeners.push(listener);
-  // Call immediately with current state
-  if (isFirestoreQuotaExceeded) {
-    listener(true);
-  }
-  return () => {
-    const idx = quotaListeners.indexOf(listener);
-    if (idx >= 0) quotaListeners.splice(idx, 1);
-  };
-}
-
-export function checkAndMarkQuotaExceeded(error: unknown): boolean {
-  if (!error) return false;
-  const errMsg = error instanceof Error ? error.message : String(error);
-  const code = (error as any)?.code;
-  if (
-    code === 'resource-exhausted' ||
-    errMsg.includes('resource-exhausted') ||
-    errMsg.includes('Quota limit exceeded') ||
-    errMsg.includes('Quota exceeded') ||
-    errMsg.includes('Free daily write units') ||
-    errMsg.includes('Free daily read units')
-  ) {
-    if (!isFirestoreQuotaExceeded) {
-      isFirestoreQuotaExceeded = true;
-      console.warn('[Firestore] Quota exceeded detected! Switching seamlessly to LocalStorage fallback mode.');
-      quotaListeners.forEach((fn) => {
-        try {
-          fn(true);
-        } catch (e) {
-          console.error('Quota listener error:', e);
-        }
-      });
-    }
-    return true;
-  }
-  return false;
-}
-
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  checkAndMarkQuotaExceeded(error);
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -115,11 +69,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  if (isFirestoreQuotaExceeded) {
-    return;
   }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -405,7 +356,6 @@ export async function saveAppStateToFirestore(
   state: AppState,
   meta?: { userId?: string; teacherName?: string; role?: string }
 ): Promise<boolean> {
-  if (isFirestoreQuotaExceeded) return false;
   const path = `workspaces/${key}`;
   const nowIso = new Date().toISOString();
   const userId = meta?.userId || state.ownerUserId || '';
@@ -424,7 +374,6 @@ export async function saveAppStateToFirestore(
     try {
       await setDoc(docRef, sanitizedState);
     } catch (primaryErr: any) {
-      if (checkAndMarkQuotaExceeded(primaryErr)) return false;
       // Emergency retry: If document size or write limit error occurred, force strip all data URLs
       if (
         primaryErr?.message?.includes('size') ||
@@ -456,7 +405,7 @@ export async function saveAppStateToFirestore(
     }
 
     // Concurrently maintain a lightweight, dedicated backup for classes and students
-    if (userId && !isFirestoreQuotaExceeded) {
+    if (userId) {
       try {
         const classesDocRef = doc(db, 'classes_data', userId);
         const optimizedStudents = Array.isArray(state.students)
@@ -476,19 +425,25 @@ export async function saveAppStateToFirestore(
           updatedAt: nowIso
         });
       } catch (backupErr) {
-        checkAndMarkQuotaExceeded(backupErr);
         console.warn('Dedicated classes_data backup notice:', backupErr);
       }
     }
 
     return true;
   } catch (err: any) {
-    checkAndMarkQuotaExceeded(err);
-    if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
-      console.warn('Firestore unavailable, state saved to local cache.');
+    if (
+      err?.code === 'unavailable' ||
+      err?.code === 'resource-exhausted' ||
+      err?.message?.includes('unavailable') ||
+      err?.message?.includes('offline') ||
+      err?.message?.includes('Quota limit exceeded') ||
+      err?.message?.includes('resource-exhausted') ||
+      err?.message?.includes('quota')
+    ) {
+      console.warn('Firestore unavailable or quota limit reached, falling back to local storage.');
       return false;
     }
-    console.warn('Save app state Firestore notice:', err?.message || err);
+    console.error('Save app state Firestore error:', err?.message || err);
     return false;
   }
 }
@@ -603,7 +558,6 @@ export function subscribeToUserWorkspace(
   key: string,
   onRemoteUpdate: (state: AppState) => void
 ): () => void {
-  if (isFirestoreQuotaExceeded) return () => {};
   const docRef = doc(db, 'workspaces', key);
   return onSnapshot(
     docRef,
@@ -617,10 +571,7 @@ export function subscribeToUserWorkspace(
       }
     },
     (err) => {
-      checkAndMarkQuotaExceeded(err);
-      if (!isFirestoreQuotaExceeded) {
-        console.warn('Real-time workspace sync listener notice:', err);
-      }
+      console.warn('Real-time workspace sync listener notice:', err);
     }
   );
 }
@@ -632,7 +583,6 @@ export function subscribeToUserKhdh(
   userId: string,
   onRemoteUpdate: (data: any) => void
 ): () => void {
-  if (isFirestoreQuotaExceeded) return () => {};
   const docRef = doc(db, 'khdh_data', userId || 'shared');
   return onSnapshot(
     docRef,
@@ -645,10 +595,7 @@ export function subscribeToUserKhdh(
       }
     },
     (err) => {
-      checkAndMarkQuotaExceeded(err);
-      if (!isFirestoreQuotaExceeded) {
-        console.warn('Real-time KHDH listener notice:', err);
-      }
+      console.warn('Real-time KHDH listener notice:', err);
     }
   );
 }
@@ -682,7 +629,6 @@ export async function saveKhdhDataToFirestore(
     configuredClasses?: ConfiguredClass[];
   }
 ): Promise<boolean> {
-  if (isFirestoreQuotaExceeded) return false;
   const sanitized = sanitizeFirestoreData(data);
   try {
     const docRef = doc(db, 'khdh_data', userId || 'shared');
@@ -693,7 +639,6 @@ export async function saveKhdhDataToFirestore(
     });
     return true;
   } catch (err: any) {
-    checkAndMarkQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, KHDH data saved locally only.');
       return false;
@@ -940,4 +885,193 @@ export async function fetchSharedGameFromFirestore(shareId: string): Promise<any
   }
 
   return null;
+}
+
+// ==========================================
+// URGENT REPORTS (BÁO CÁO GẤP SỐ LIỆU EXCEL)
+// ==========================================
+
+const URGENT_REPORT_CACHE_PREFIX = 'urgent_report_cache_';
+
+/**
+ * Save an Urgent Report to Firestore with real-time sync & local cache
+ */
+export async function saveUrgentReportToFirestore(report: UrgentReportItem): Promise<boolean> {
+  const path = `urgent_reports/${report.id}`;
+  try {
+    localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${report.id}`, JSON.stringify(report));
+  } catch (e) {
+    console.warn('Failed to cache urgent report in localStorage:', e);
+  }
+
+  try {
+    const docRef = doc(db, 'urgent_reports', report.id);
+    const sanitized = sanitizeFirestoreData({
+      ...report,
+      updatedAt: new Date().toISOString()
+    });
+    await setDoc(docRef, sanitized);
+    return true;
+  } catch (err: any) {
+    if (
+      err?.code === 'permission-denied' ||
+      err?.code === 'resource-exhausted' ||
+      err?.message?.includes('permission') ||
+      err?.message?.includes('Quota') ||
+      err?.message?.includes('resource-exhausted')
+    ) {
+      console.warn(`Firestore write warning for ${path}: ${err?.message}. Report saved in local cache.`);
+      return true; // Local storage save succeeded
+    }
+    console.warn(`Save urgent report error for ${path}:`, err);
+    return true; // Local storage save succeeded
+  }
+}
+
+/**
+ * Fetch a single Urgent Report from Firestore
+ */
+export async function fetchUrgentReportFromFirestore(reportId: string): Promise<UrgentReportItem | null> {
+  const path = `urgent_reports/${reportId}`;
+  try {
+    const docRef = doc(db, 'urgent_reports', reportId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as UrgentReportItem;
+      try {
+        localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
+      } catch (e) {}
+      return data;
+    }
+  } catch (err) {
+    console.warn(`Firestore read warning for ${path}:`, err);
+  }
+
+  // Fallback to local storage cache if network is slow/offline
+  try {
+    const cached = localStorage.getItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+/**
+ * Subscribe to an Urgent Report in real-time
+ */
+export function subscribeToUrgentReport(
+  reportId: string,
+  onUpdate: (report: UrgentReportItem | null) => void
+): () => void {
+  const path = `urgent_reports/${reportId}`;
+  const docRef = doc(db, 'urgent_reports', reportId);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as UrgentReportItem;
+        try {
+          localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
+        } catch (e) {}
+        onUpdate(data);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (err) => {
+      console.warn(`Real-time listener notice for ${path}:`, err);
+    }
+  );
+}
+
+/**
+ * Delete an Urgent Report from Firestore
+ */
+export async function deleteUrgentReportFromFirestore(reportId: string): Promise<boolean> {
+  const path = `urgent_reports/${reportId}`;
+  try {
+    localStorage.removeItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
+  } catch (e) {}
+
+  try {
+    const docRef = doc(db, 'urgent_reports', reportId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (err: any) {
+    console.warn(`Delete urgent report Firestore warning for ${path}:`, err?.message || err);
+    return true; // Local storage removal succeeded
+  }
+}
+
+/**
+ * Submit / Update a single row in an Urgent Report from a shared public or internal form
+ */
+export async function submitReportRowToFirestore(
+  reportId: string,
+  submittedRow: ReportRow,
+  isNewRow: boolean,
+  submitterName?: string
+): Promise<{ success: boolean; report?: UrgentReportItem; error?: string }> {
+  try {
+    // 1. Fetch current report state
+    const current = await fetchUrgentReportFromFirestore(reportId);
+    if (!current) {
+      return { success: false, error: 'Không tìm thấy mẫu báo cáo trên hệ thống.' };
+    }
+
+    if (current.status === 'closed') {
+      return { success: false, error: 'Mẫu báo cáo này đã khóa nhận số liệu!' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedRows = [...current.rows];
+
+    if (isNewRow) {
+      // Append new row
+      updatedRows.push({
+        ...submittedRow,
+        _submittedAt: nowIso,
+        _submittedBy: submitterName || 'Người dùng',
+        _isComplete: true
+      });
+    } else {
+      // Update existing row matching id
+      const index = updatedRows.findIndex((r) => r.id === submittedRow.id);
+      if (index >= 0) {
+        updatedRows[index] = {
+          ...updatedRows[index],
+          ...submittedRow,
+          _submittedAt: nowIso,
+          _submittedBy: submitterName || updatedRows[index]._submittedBy || 'Người dùng',
+          _isComplete: true
+        };
+      } else {
+        updatedRows.push({
+          ...submittedRow,
+          _submittedAt: nowIso,
+          _submittedBy: submitterName || 'Người dùng',
+          _isComplete: true
+        });
+      }
+    }
+
+    const updatedReport: UrgentReportItem = {
+      ...current,
+      rows: updatedRows,
+      submissionsCount: (current.submissionsCount || 0) + 1,
+      updatedAt: nowIso
+    };
+
+    const saved = await saveUrgentReportToFirestore(updatedReport);
+    if (saved) {
+      return { success: true, report: updatedReport };
+    } else {
+      return { success: false, error: 'Không thể ghi số liệu lên Cloud Firestore.' };
+    }
+  } catch (err: any) {
+    console.error('submitReportRowToFirestore error:', err);
+    return { success: false, error: err?.message || 'Lỗi khi gửi số liệu báo cáo.' };
+  }
 }
