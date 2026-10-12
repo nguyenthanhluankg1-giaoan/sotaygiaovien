@@ -74,7 +74,15 @@ export default function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [contactInfo, setContactInfo] = useState<ContactInfo>(() => getLocalCachedContactInfo());
   const [userApiKey, setUserApiKey] = useState<string>(() => getStoredApiKey(getSavedSessionUser()));
-  const [sharedReportId, setSharedReportId] = useState<string | null>(null);
+  const [sharedReportId, setSharedReportId] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('reportId') || params.get('report') || null;
+      }
+    } catch {}
+    return null;
+  });
 
   // References to guarantee no race conditions across browsers
   const cloudLoadedUserRef = useRef<string | null>(null);
@@ -409,6 +417,22 @@ export default function App() {
     setUsers(list);
     setDbConnected(true);
   };
+
+  // If accessed directly via shared report form link or QR code, bypass login screen completely!
+  if (sharedReportId) {
+    return (
+      <SharedReportFormView
+        reportId={sharedReportId}
+        currentUser={currentUser}
+        onBackToApp={() => {
+          setSharedReportId(null);
+          try {
+            window.history.replaceState({}, '', window.location.pathname);
+          } catch {}
+        }}
+      />
+    );
+  }
 
   // Check if URL contains student tugTeam parameter, page=film, or game room param for direct student/guest access
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;

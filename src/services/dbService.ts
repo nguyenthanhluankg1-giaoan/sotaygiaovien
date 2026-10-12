@@ -890,7 +890,7 @@ const URGENT_REPORT_CACHE_PREFIX = 'urgent_report_cache_';
  */
 function getReportDocRef(reportId: string) {
   const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
-  return doc(db, 'workspaces', docKey);
+  return doc(db, 'urgent_reports', docKey);
 }
 
 /**
@@ -898,26 +898,33 @@ function getReportDocRef(reportId: string) {
  */
 export async function saveUrgentReportToFirestore(report: UrgentReportItem): Promise<boolean> {
   const docKey = report.id.startsWith('report_') ? report.id : `report_${report.id}`;
-  const path = `workspaces/${docKey}`;
   try {
     localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${report.id}`, JSON.stringify(report));
   } catch (e) {
     console.warn('Failed to cache urgent report in localStorage:', e);
   }
 
+  const sanitized = sanitizeFirestoreData({
+    ...report,
+    updatedAt: new Date().toISOString()
+  });
+
   try {
     const docRef = getReportDocRef(report.id);
-    const sanitized = sanitizeFirestoreData({
-      ...report,
-      updatedAt: new Date().toISOString()
-    });
     await setDoc(docRef, sanitized);
-    return true;
   } catch (err: any) {
-    console.warn(`Firestore save notice for ${path}:`, err);
-    // Do not throw fatal error if cloud write is temporarily unavailable; local storage & workspace have it
-    return true;
+    console.warn(`Firestore save notice for urgent_reports/${docKey}:`, err);
   }
+
+  // Also write to workspaces collection for backward compatibility/backup
+  try {
+    const wsRef = doc(db, 'workspaces', docKey);
+    await setDoc(wsRef, sanitized);
+  } catch (err: any) {
+    console.warn(`Firestore save notice for workspaces/${docKey}:`, err);
+  }
+
+  return true;
 }
 
 /**
@@ -925,7 +932,8 @@ export async function saveUrgentReportToFirestore(report: UrgentReportItem): Pro
  */
 export async function fetchUrgentReportFromFirestore(reportId: string): Promise<UrgentReportItem | null> {
   const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
-  const path = `workspaces/${docKey}`;
+
+  // 1. Try urgent_reports collection
   try {
     const docRef = getReportDocRef(reportId);
     const snap = await getDoc(docRef);
@@ -937,10 +945,25 @@ export async function fetchUrgentReportFromFirestore(reportId: string): Promise<
       return data;
     }
   } catch (err) {
-    console.warn(`Firestore read warning for ${path}:`, err);
+    console.warn(`Firestore read warning for urgent_reports/${docKey}:`, err);
   }
 
-  // Fallback to local storage cache if network is slow/offline
+  // 2. Try workspaces collection fallback
+  try {
+    const wsRef = doc(db, 'workspaces', docKey);
+    const snap = await getDoc(wsRef);
+    if (snap.exists()) {
+      const data = snap.data() as UrgentReportItem;
+      try {
+        localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(data));
+      } catch (e) {}
+      return data;
+    }
+  } catch (err) {
+    console.warn(`Firestore read warning for workspaces/${docKey}:`, err);
+  }
+
+  // 3. Fallback to local storage cache if network is slow/offline
   try {
     const cached = localStorage.getItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
     if (cached) {
@@ -959,8 +982,8 @@ export function subscribeToUrgentReport(
   onUpdate: (report: UrgentReportItem | null) => void
 ): () => void {
   const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
-  const path = `workspaces/${docKey}`;
   const docRef = getReportDocRef(reportId);
+
   return onSnapshot(
     docRef,
     (snap) => {
@@ -971,11 +994,15 @@ export function subscribeToUrgentReport(
         } catch (e) {}
         onUpdate(data);
       } else {
-        onUpdate(null);
+        // Attempt fallback fetch from workspaces
+        fetchUrgentReportFromFirestore(reportId).then((fallback) => {
+          if (fallback) onUpdate(fallback);
+          else onUpdate(null);
+        });
       }
     },
     (err) => {
-      console.warn(`Real-time listener notice for ${path}:`, err);
+      console.warn(`Real-time listener notice for urgent_reports/${docKey}:`, err);
     }
   );
 }
@@ -992,11 +1019,18 @@ export async function deleteUrgentReportFromFirestore(reportId: string): Promise
   try {
     const docRef = getReportDocRef(reportId);
     await deleteDoc(docRef);
-    return true;
+  } catch (err) {
+    console.warn(`Delete error for urgent_reports/${docKey}:`, err);
+  }
+
+  try {
+    const wsRef = doc(db, 'workspaces', docKey);
+    await deleteDoc(wsRef);
   } catch (err) {
     console.warn(`Delete error for workspaces/${docKey}:`, err);
-    return true;
   }
+
+  return true;
 }
 
 /**
