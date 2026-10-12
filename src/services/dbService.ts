@@ -53,7 +53,43 @@ interface FirestoreErrorInfo {
   }
 }
 
+// Circuit breaker flag for Firestore quota or connection issues
+let isFirestoreQuotaExceeded = false;
+let quotaExceededTimestamp = 0;
+
+export function checkFirestoreQuotaExceeded(err: any): boolean {
+  if (!err) return false;
+  const str = String(err?.message || err?.code || err).toLowerCase();
+  if (
+    str.includes('resource-exhausted') ||
+    str.includes('quota limit exceeded') ||
+    str.includes('quota exceeded') ||
+    str.includes('free daily write units')
+  ) {
+    if (!isFirestoreQuotaExceeded) {
+      console.warn('[Cloud Firestore] Daily write quota exceeded. Operating seamlessly in local cache mode.');
+    }
+    isFirestoreQuotaExceeded = true;
+    quotaExceededTimestamp = Date.now();
+    return true;
+  }
+  return false;
+}
+
+export function shouldSkipFirestoreWrite(): boolean {
+  if (!isFirestoreQuotaExceeded) return false;
+  // If quota was exceeded within last 5 minutes, skip remote calls to prevent background retry loops
+  if (Date.now() - quotaExceededTimestamp < 5 * 60 * 1000) {
+    return true;
+  }
+  isFirestoreQuotaExceeded = false;
+  return false;
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  if (checkFirestoreQuotaExceeded(error)) {
+    return;
+  }
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -69,9 +105,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  };
+  console.warn(`Firestore Notice (${operationType} @ ${path}):`, errInfo.error);
 }
 
 const LOCAL_USERS_KEY = 'lopHoc_system_users_v1';
@@ -356,6 +391,10 @@ export async function saveAppStateToFirestore(
   state: AppState,
   meta?: { userId?: string; teacherName?: string; role?: string }
 ): Promise<boolean> {
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
+
   const path = `workspaces/${key}`;
   const nowIso = new Date().toISOString();
   const userId = meta?.userId || state.ownerUserId || '';
@@ -374,6 +413,9 @@ export async function saveAppStateToFirestore(
     try {
       await setDoc(docRef, sanitizedState);
     } catch (primaryErr: any) {
+      if (checkFirestoreQuotaExceeded(primaryErr)) {
+        return true;
+      }
       // Emergency retry: If document size or write limit error occurred, force strip all data URLs
       if (
         primaryErr?.message?.includes('size') ||
@@ -404,38 +446,14 @@ export async function saveAppStateToFirestore(
       }
     }
 
-    // Concurrently maintain a lightweight, dedicated backup for classes and students
-    if (userId) {
-      try {
-        const classesDocRef = doc(db, 'classes_data', userId);
-        const optimizedStudents = Array.isArray(state.students)
-          ? state.students.map((s) => {
-              if (s.avatar && typeof s.avatar === 'string' && s.avatar.startsWith('data:') && s.avatar.length > 12000) {
-                return { ...s, avatar: '' };
-              }
-              return s;
-            })
-          : [];
-
-        await setDoc(classesDocRef, {
-          userId,
-          ownerName: meta?.teacherName || state.ownerName || state.teacher?.name || '',
-          classes: sanitizeFirestoreData(state.classes || []),
-          students: sanitizeFirestoreData(optimizedStudents),
-          updatedAt: nowIso
-        });
-      } catch (backupErr) {
-        console.warn('Dedicated classes_data backup notice:', backupErr);
-      }
-    }
-
     return true;
   } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, state saved to local cache.');
       return false;
     }
-    console.error('Save app state Firestore error:', err?.message || err);
+    console.warn('Save app state Firestore notice:', err?.message || err);
     return false;
   }
 }
@@ -904,6 +922,10 @@ export async function saveUrgentReportToFirestore(report: UrgentReportItem): Pro
     console.warn('Failed to cache urgent report in localStorage:', e);
   }
 
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
+
   const sanitized = sanitizeFirestoreData({
     ...report,
     updatedAt: new Date().toISOString()
@@ -913,15 +935,8 @@ export async function saveUrgentReportToFirestore(report: UrgentReportItem): Pro
     const docRef = getReportDocRef(report.id);
     await setDoc(docRef, sanitized);
   } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
     console.warn(`Firestore save notice for urgent_reports/${docKey}:`, err);
-  }
-
-  // Also write to workspaces collection for backward compatibility/backup
-  try {
-    const wsRef = doc(db, 'workspaces', docKey);
-    await setDoc(wsRef, sanitized);
-  } catch (err: any) {
-    console.warn(`Firestore save notice for workspaces/${docKey}:`, err);
   }
 
   return true;
@@ -1031,6 +1046,48 @@ export async function deleteUrgentReportFromFirestore(reportId: string): Promise
   }
 
   return true;
+}
+
+/**
+ * Delete multiple Urgent Reports from Firestore in bulk
+ */
+export async function deleteMultipleUrgentReportsFromFirestore(reportIds: string[]): Promise<boolean> {
+  try {
+    await Promise.all(reportIds.map((id) => deleteUrgentReportFromFirestore(id)));
+    return true;
+  } catch (err) {
+    console.warn('Error bulk deleting reports:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete a specific row from an Urgent Report
+ */
+export async function deleteReportRowFromFirestore(
+  reportId: string,
+  rowId: string
+): Promise<{ success: boolean; report?: UrgentReportItem; error?: string }> {
+  try {
+    const current = await fetchUrgentReportFromFirestore(reportId);
+    if (!current) {
+      return { success: false, error: 'Không tìm thấy mẫu báo cáo.' };
+    }
+
+    const updatedRows = current.rows.filter((r) => r.id !== rowId);
+    const updatedReport: UrgentReportItem = {
+      ...current,
+      rows: updatedRows,
+      submissionsCount: updatedRows.filter((r) => r._isComplete).length,
+      updatedAt: new Date().toISOString()
+    };
+
+    await saveUrgentReportToFirestore(updatedReport);
+    return { success: true, report: updatedReport };
+  } catch (err: any) {
+    console.error('Error deleting report row:', err);
+    return { success: false, error: err?.message || 'Không thể xóa dòng này' };
+  }
 }
 
 /**

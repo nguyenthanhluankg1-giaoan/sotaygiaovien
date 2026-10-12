@@ -30,7 +30,10 @@ import {
   CheckCircle2,
   Calendar,
   Layers,
-  TableProperties
+  TableProperties,
+  AlertTriangle,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import confetti from 'canvas-confetti';
@@ -46,6 +49,8 @@ import {
   fetchUrgentReportFromFirestore,
   subscribeToUrgentReport,
   deleteUrgentReportFromFirestore,
+  deleteMultipleUrgentReportsFromFirestore,
+  deleteReportRowFromFirestore,
   submitReportRowToFirestore
 } from '../services/dbService';
 
@@ -103,6 +108,26 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
   // Share Modal state
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedMessage, setCopiedMessage] = useState<boolean>(false);
+
+  // Bulk selection & smooth deletion state
+  const [isBulkDeleteMode, setIsBulkDeleteMode] = useState<boolean>(false);
+  const [selectedReportIdsForBulk, setSelectedReportIdsForBulk] = useState<string[]>([]);
+
+  // Custom Modals for smooth deletion
+  const [reportToDelete, setReportToDelete] = useState<UrgentReportItem | null>(null);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
+  const [rowToDelete, setRowToDelete] = useState<{ rowId: string; label: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Toast feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 3500);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -480,23 +505,124 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     }));
   };
 
-  // Delete report
-  const handleDeleteReport = async (reportId: string) => {
-    if (!window.confirm('Thầy/Cô có chắc chắn muốn xóa mẫu báo cáo này không? Dữ liệu đã thu thập sẽ không thể khôi phục.')) {
-      return;
+  // Toggle selection for bulk delete
+  const toggleSelectReportForBulk = (reportId: string) => {
+    setSelectedReportIdsForBulk((prev) =>
+      prev.includes(reportId) ? prev.filter((id) => id !== reportId) : [...prev, reportId]
+    );
+  };
+
+  const handleSelectAllBulk = () => {
+    const allIds = (state.urgentReports || []).map((r) => r.id);
+    if (selectedReportIdsForBulk.length === allIds.length) {
+      setSelectedReportIdsForBulk([]);
+    } else {
+      setSelectedReportIdsForBulk(allIds);
     }
+  };
 
-    await deleteUrgentReportFromFirestore(reportId);
-    onUpdateState((prev) => {
-      const remaining = (prev.urgentReports || []).filter((r) => r.id !== reportId);
-      return {
-        ...prev,
-        urgentReports: remaining
-      };
-    });
+  // Perform single report deletion smoothly with modal
+  const handleConfirmDeleteSingleReport = async () => {
+    if (!reportToDelete) return;
+    setIsDeleting(true);
+    const targetId = reportToDelete.id;
+    const title = reportToDelete.title;
 
-    const nextOne = (state.urgentReports || []).find((r) => r.id !== reportId);
-    if (nextOne) setSelectedReportId(nextOne.id);
+    try {
+      await deleteUrgentReportFromFirestore(targetId);
+
+      onUpdateState((prev) => {
+        const remaining = (prev.urgentReports || []).filter((r) => r.id !== targetId);
+        return {
+          ...prev,
+          urgentReports: remaining
+        };
+      });
+
+      const remainingReports = (state.urgentReports || []).filter((r) => r.id !== targetId);
+      if (selectedReportId === targetId) {
+        setSelectedReportId(remainingReports[0] ? remainingReports[0].id : '');
+      }
+
+      showToast(`Đã xóa thành công mẫu báo cáo "${title}"`);
+    } catch (err: any) {
+      alert('Không thể xóa báo cáo: ' + (err?.message || 'Lỗi hệ thống'));
+    } finally {
+      setIsDeleting(false);
+      setReportToDelete(null);
+    }
+  };
+
+  // Perform bulk deletion smoothly with modal
+  const handleConfirmDeleteBulk = async () => {
+    if (selectedReportIdsForBulk.length === 0) return;
+    setIsDeleting(true);
+    const count = selectedReportIdsForBulk.length;
+
+    try {
+      await deleteMultipleUrgentReportsFromFirestore(selectedReportIdsForBulk);
+
+      onUpdateState((prev) => {
+        const remaining = (prev.urgentReports || []).filter(
+          (r) => !selectedReportIdsForBulk.includes(r.id)
+        );
+        return {
+          ...prev,
+          urgentReports: remaining
+        };
+      });
+
+      const remainingReports = (state.urgentReports || []).filter(
+        (r) => !selectedReportIdsForBulk.includes(r.id)
+      );
+
+      if (selectedReportIdsForBulk.includes(selectedReportId)) {
+        setSelectedReportId(remainingReports[0] ? remainingReports[0].id : '');
+      }
+
+      setSelectedReportIdsForBulk([]);
+      setIsBulkDeleteMode(false);
+      showToast(`Đã xóa thành công ${count} mẫu báo cáo khỏi danh sách!`);
+    } catch (err: any) {
+      alert('Không thể xóa hàng loạt: ' + (err?.message || 'Lỗi'));
+    } finally {
+      setIsDeleting(false);
+      setIsBulkDeleteModalOpen(false);
+    }
+  };
+
+  // Delete individual row from spreadsheet table
+  const handleConfirmDeleteRow = async () => {
+    if (!currentReport || !rowToDelete) return;
+    setIsDeleting(true);
+
+    try {
+      const res = await deleteReportRowFromFirestore(currentReport.id, rowToDelete.rowId);
+      if (res.success && res.report) {
+        onUpdateState((prev) => ({
+          ...prev,
+          urgentReports: (prev.urgentReports || []).map((r) =>
+            r.id === res.report!.id ? res.report! : r
+          )
+        }));
+        showToast(`Đã xóa dòng "${rowToDelete.label}" thành công!`);
+      } else {
+        alert(res.error || 'Không thể xóa dòng này');
+      }
+    } catch (err: any) {
+      alert('Lỗi xóa dòng: ' + (err?.message || 'Lỗi'));
+    } finally {
+      setIsDeleting(false);
+      setRowToDelete(null);
+    }
+  };
+
+  // Legacy delete report trigger
+  const handleDeleteReport = (reportId: string) => {
+    const target = (state.urgentReports || []).find((r) => r.id === reportId);
+    if (target) {
+      setReportToDelete(target);
+    }
   };
 
   // Share URL
@@ -610,15 +736,70 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
         {/* Left: Report List / Selector */}
         <div className="lg:col-span-1 space-y-3">
           <div className="bg-white rounded-3xl border border-teal-200/90 p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
               <span className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-teal-600" />
                 <span>Danh Sách Mẫu Báo Cáo</span>
               </span>
-              <span className="text-[11px] font-bold text-teal-700 px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200">
-                {(state.urgentReports || []).length} mẫu
-              </span>
+              <div className="flex items-center gap-1.5">
+                {(state.urgentReports || []).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBulkDeleteMode(!isBulkDeleteMode);
+                      setSelectedReportIdsForBulk([]);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-black cursor-pointer transition-all flex items-center gap-1 ${
+                      isBulkDeleteMode
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                    }`}
+                    title="Bật chế độ chọn nhiều mẫu báo cáo để xóa hàng loạt"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>{isBulkDeleteMode ? 'Hủy chọn' : 'Xóa nhiều'}</span>
+                  </button>
+                )}
+                <span className="text-[11px] font-bold text-teal-700 px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200">
+                  {(state.urgentReports || []).length} mẫu
+                </span>
+              </div>
             </div>
+
+            {/* Bulk Delete Management Bar */}
+            {isBulkDeleteMode && (state.urgentReports || []).length > 0 && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-2xl space-y-2 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-xs font-bold text-rose-900">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllBulk}
+                    className="flex items-center gap-1.5 hover:underline cursor-pointer text-[11px]"
+                  >
+                    {selectedReportIdsForBulk.length === (state.urgentReports || []).length ? (
+                      <>
+                        <CheckSquare className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Bỏ chọn tất cả</span>
+                      </>
+                    ) : (
+                      <>
+                        <Square className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Chọn tất cả ({selectedReportIdsForBulk.length}/{(state.urgentReports || []).length})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={selectedReportIdsForBulk.length === 0}
+                  onClick={() => setIsBulkDeleteModalOpen(true)}
+                  className="w-full py-1.5 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-black text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Xóa {selectedReportIdsForBulk.length} Mẫu Báo Cáo Đã Chọn</span>
+                </button>
+              </div>
+            )}
 
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
               {(state.urgentReports || []).map((rep) => {
@@ -626,22 +807,38 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                 const tot = rep.rows.length;
                 const comp = rep.rows.filter((r) => r._isComplete).length;
                 const pct = tot > 0 ? Math.round((comp / tot) * 100) : 0;
+                const isCheckedInBulk = selectedReportIdsForBulk.includes(rep.id);
 
                 return (
                   <div
                     key={rep.id}
                     onClick={() => {
-                      setSelectedReportId(rep.id);
-                      setActiveTab('detail');
+                      if (isBulkDeleteMode) {
+                        toggleSelectReportForBulk(rep.id);
+                      } else {
+                        setSelectedReportId(rep.id);
+                        setActiveTab('detail');
+                      }
                     }}
-                    className={`p-3 rounded-2xl border transition-all cursor-pointer space-y-2 text-left ${
-                      isSelected
+                    className={`p-3 rounded-2xl border transition-all cursor-pointer space-y-2 text-left relative ${
+                      isBulkDeleteMode && isCheckedInBulk
+                        ? 'bg-rose-50/80 border-rose-400 shadow-sm ring-1 ring-rose-400'
+                        : isSelected
                         ? 'bg-teal-50/90 border-teal-500 shadow-sm ring-1 ring-teal-500'
                         : 'bg-white hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-1.5">
-                      <div className="space-y-0.5 min-w-0">
+                      {isBulkDeleteMode && (
+                        <div className="pt-0.5 shrink-0">
+                          {isCheckedInBulk ? (
+                            <CheckSquare className="w-4 h-4 text-rose-600" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-300" />
+                          )}
+                        </div>
+                      )}
+                      <div className="space-y-0.5 min-w-0 flex-1">
                         <div className="flex items-center gap-1 flex-wrap">
                           {rep.urgentLevel === 'very_urgent' && (
                             <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-rose-600 text-white">
@@ -685,17 +882,20 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
 
                     <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100">
                       <span className="truncate">{rep.fileName || 'Excel'}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteReport(rep.id);
-                        }}
-                        className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer"
-                        title="Xóa mẫu báo cáo này"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {!isBulkDeleteMode && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReportToDelete(rep);
+                          }}
+                          className="px-2 py-1 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 cursor-pointer transition-colors font-black text-[10px] flex items-center gap-1"
+                          title="Xóa mẫu báo cáo này"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Xóa</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -812,6 +1012,17 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                           <span>Mở lại thu thập</span>
                         </>
                       )}
+                    </button>
+
+                    {/* Delete Current Report Button */}
+                    <button
+                      type="button"
+                      onClick={() => setReportToDelete(currentReport)}
+                      className="px-3 py-2 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                      title="Xóa hoàn toàn mẫu báo cáo hiện tại"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-600" />
+                      <span>Xóa Mẫu Này</span>
                     </button>
                   </div>
                 </div>
@@ -998,7 +1209,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                               })}
 
                               {/* Actions */}
-                              <td className="py-2 px-3 text-center whitespace-nowrap">
+                              <td className="py-2 px-3 text-center whitespace-nowrap space-x-1">
                                 <button
                                   type="button"
                                   onClick={() => handleOpenFormForRow(row)}
@@ -1007,6 +1218,20 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                                 >
                                   <Edit3 className="w-3 h-3" />
                                   <span>Điền</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const idCol = currentReport.columns.find((c) => c.id === currentReport.identifierColumnId || c.isIdentifier) || currentReport.columns[1];
+                                    const label = idCol && row[idCol.id] ? String(row[idCol.id]) : `Dòng ID: ${row.id}`;
+                                    setRowToDelete({ rowId: row.id, label });
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-[11px] cursor-pointer inline-flex items-center gap-1"
+                                  title="Xóa dòng này khỏi bảng báo cáo"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Xóa</span>
                                 </button>
                               </td>
                             </tr>
@@ -1512,6 +1737,181 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 4: CUSTOM CONFIRMATION MODAL - SINGLE REPORT DELETION    */}
+      {/* ============================================================== */}
+      {reportToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-rose-200 w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center font-black shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <h3 className="text-base font-black text-slate-900">
+                  Xác Nhận Xóa Báo Cáo
+                </h3>
+                <p className="text-xs text-rose-600 font-bold">Thao tác này không thể hoàn tác!</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200 space-y-2 text-xs">
+              <div>
+                <span className="text-slate-500 font-medium">Tên mẫu báo cáo:</span>
+                <p className="font-black text-slate-900 text-sm leading-snug">{reportToDelete.title}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 text-[11px]">
+                <div>
+                  <span className="text-slate-500">Số dòng dữ liệu:</span>
+                  <div className="font-bold text-slate-800">{reportToDelete.rows.length} đối tượng</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">File đính kèm:</span>
+                  <div className="font-bold text-slate-800 truncate">{reportToDelete.fileName || 'Excel'}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setReportToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50 transition-all"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDeleteSingleReport}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white font-black text-xs shadow-md shadow-rose-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
+              >
+                {isDeleting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>Xóa Vĩnh Viễn</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 5: CUSTOM CONFIRMATION MODAL - BULK REPORT DELETION      */}
+      {/* ============================================================== */}
+      {isBulkDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-rose-200 w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center font-black shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <h3 className="text-base font-black text-slate-900">
+                  Xóa Hàng Loạt Báo Cáo
+                </h3>
+                <p className="text-xs text-rose-600 font-bold">Thầy/Cô đang chọn xóa {selectedReportIdsForBulk.length} mẫu báo cáo!</p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50/60 rounded-2xl p-3 border border-rose-200 text-xs space-y-1.5 max-h-40 overflow-y-auto">
+              <span className="font-bold text-rose-900 block">Các báo cáo sẽ bị xóa hoàn toàn:</span>
+              <ul className="list-disc pl-4 space-y-1 text-slate-700">
+                {(state.urgentReports || [])
+                  .filter((r) => selectedReportIdsForBulk.includes(r.id))
+                  .map((r) => (
+                    <li key={r.id} className="font-semibold text-slate-900 truncate">
+                      {r.title}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setIsBulkDeleteModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50 transition-all"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDeleteBulk}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white font-black text-xs shadow-md shadow-rose-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
+              >
+                {isDeleting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>Xác Nhận Xóa {selectedReportIdsForBulk.length} Báo Cáo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 6: CUSTOM CONFIRMATION MODAL - SPREADSHEET ROW DELETION */}
+      {/* ============================================================== */}
+      {rowToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-rose-200 w-full max-w-sm p-5 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-black shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <h3 className="text-sm font-black text-slate-900">
+                  Xóa Dòng Dữ Liệu
+                </h3>
+                <p className="text-xs text-slate-500 truncate">{rowToDelete.label}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed font-normal">
+              Thầy/Cô có chắc chắn muốn xóa dòng số liệu này khỏi mẫu báo cáo?
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setRowToDelete(null)}
+                className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDeleteRow}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Xóa Dòng Này</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* FLOATING TOAST NOTIFICATION FEEDBACK                           */}
+      {/* ============================================================== */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-200 max-w-md">
+          <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <p className="text-xs font-bold leading-snug">{toastMessage}</p>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="p-1 text-slate-400 hover:text-white cursor-pointer ml-auto"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

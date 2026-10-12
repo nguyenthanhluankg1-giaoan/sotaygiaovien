@@ -250,7 +250,7 @@ export default function App() {
     return () => unsubscribe();
   }, [currentUser?.id]);
 
-  // Ultra-fast auto-sync whenever state changes: immediate local storage + 150ms background Cloud Firestore save
+  // Auto-sync state: immediate local storage + debounced background Cloud Firestore save (2.5s)
   useEffect(() => {
     saveStoredState(currentUser, state);
 
@@ -279,11 +279,11 @@ export default function App() {
           );
         }
       } catch (err) {
-        console.warn('Auto-save firestore error:', err);
+        console.warn('Auto-save firestore notice:', err);
       } finally {
         setIsCloudSaving(false);
       }
-    }, 150);
+    }, 2500);
 
     return () => clearTimeout(timer);
   }, [state, currentUser]);
