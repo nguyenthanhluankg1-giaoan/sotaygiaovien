@@ -54,8 +54,22 @@ interface FirestoreErrorInfo {
 }
 
 // Circuit breaker flag for Firestore quota or connection issues
-let isFirestoreQuotaExceeded = false;
-let quotaExceededTimestamp = 0;
+const QUOTA_EXCEEDED_SESSION_KEY = 'firestore_quota_exceeded_v1';
+
+let isFirestoreQuotaExceeded = (() => {
+  try {
+    const stored = sessionStorage.getItem(QUOTA_EXCEEDED_SESSION_KEY);
+    if (stored) {
+      const ts = parseInt(stored, 10);
+      if (!isNaN(ts) && Date.now() - ts < 15 * 60 * 1000) {
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+})();
+
+let quotaExceededTimestamp = isFirestoreQuotaExceeded ? Date.now() : 0;
 
 export function checkFirestoreQuotaExceeded(err: any): boolean {
   if (!err) return false;
@@ -71,6 +85,9 @@ export function checkFirestoreQuotaExceeded(err: any): boolean {
     }
     isFirestoreQuotaExceeded = true;
     quotaExceededTimestamp = Date.now();
+    try {
+      sessionStorage.setItem(QUOTA_EXCEEDED_SESSION_KEY, String(Date.now()));
+    } catch (e) {}
     return true;
   }
   return false;
@@ -78,11 +95,14 @@ export function checkFirestoreQuotaExceeded(err: any): boolean {
 
 export function shouldSkipFirestoreWrite(): boolean {
   if (!isFirestoreQuotaExceeded) return false;
-  // If quota was exceeded within last 5 minutes, skip remote calls to prevent background retry loops
-  if (Date.now() - quotaExceededTimestamp < 5 * 60 * 1000) {
+  // If quota was exceeded within last 15 minutes, skip remote calls to prevent background retry loops
+  if (Date.now() - quotaExceededTimestamp < 15 * 60 * 1000) {
     return true;
   }
   isFirestoreQuotaExceeded = false;
+  try {
+    sessionStorage.removeItem(QUOTA_EXCEEDED_SESSION_KEY);
+  } catch (e) {}
   return false;
 }
 
@@ -186,6 +206,7 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
     setLocalCachedUsers(list);
     return list;
   } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
     // If it's a connection or offline error, use local cache silently with a helpful log
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline') || err?.code === 'failed-precondition') {
       console.warn('Firestore is currently operating offline/unavailable, using local cache.');
@@ -202,20 +223,25 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
  * Create or update a user in Firestore
  */
 export async function saveUserToFirestore(user: UserAccount): Promise<boolean> {
-  const path = `users/${user.id}`;
+  // Update local cache first
+  const currentList = getLocalCachedUsers();
+  const idx = currentList.findIndex((u) => u.id === user.id);
+  if (idx >= 0) {
+    currentList[idx] = user;
+  } else {
+    currentList.push(user);
+  }
+  setLocalCachedUsers(currentList);
+
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
+
   try {
     await setDoc(doc(db, 'users', user.id), user);
-    // Update local cache
-    const currentList = getLocalCachedUsers();
-    const idx = currentList.findIndex((u) => u.id === user.id);
-    if (idx >= 0) {
-      currentList[idx] = user;
-    } else {
-      currentList.push(user);
-    }
-    setLocalCachedUsers(currentList);
     return true;
   } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, saved to local cache only.');
       return false;
@@ -229,15 +255,19 @@ export async function saveUserToFirestore(user: UserAccount): Promise<boolean> {
  * Delete a user from Firestore
  */
 export async function deleteUserFromFirestore(userId: string): Promise<boolean> {
+  const currentList = getLocalCachedUsers().filter((u) => u.id !== userId);
+  setLocalCachedUsers(currentList);
+
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
+
   try {
     await deleteDoc(doc(db, 'users', userId));
-    const currentList = getLocalCachedUsers().filter((u) => u.id !== userId);
-    setLocalCachedUsers(currentList);
     return true;
   } catch (err) {
-    console.error('Failed to delete user from Firestore:', err);
-    const currentList = getLocalCachedUsers().filter((u) => u.id !== userId);
-    setLocalCachedUsers(currentList);
+    checkFirestoreQuotaExceeded(err);
+    console.warn('Delete user Firestore notice:', err);
     return false;
   }
 }
@@ -468,6 +498,9 @@ export async function syncClassesAndStudentsToFirestore(
   meta?: { teacherName?: string }
 ): Promise<boolean> {
   if (!userId) return false;
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
   const nowIso = new Date().toISOString();
 
   try {
@@ -496,8 +529,9 @@ export async function syncClassesAndStudentsToFirestore(
     }
 
     return true;
-  } catch (err) {
-    console.error('Direct syncClassesAndStudentsToFirestore error:', err);
+  } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
+    console.warn('Direct syncClassesAndStudentsToFirestore notice:', err?.message || err);
     return false;
   }
 }
@@ -568,6 +602,9 @@ export function subscribeToUserWorkspace(
   key: string,
   onRemoteUpdate: (state: AppState) => void
 ): () => void {
+  if (shouldSkipFirestoreWrite()) {
+    return () => {};
+  }
   const docRef = doc(db, 'workspaces', key);
   return onSnapshot(
     docRef,
@@ -581,7 +618,8 @@ export function subscribeToUserWorkspace(
       }
     },
     (err) => {
-      console.warn('Real-time workspace sync listener notice:', err);
+      checkFirestoreQuotaExceeded(err);
+      console.warn('Real-time workspace sync listener notice:', err?.message || err);
     }
   );
 }
@@ -593,6 +631,9 @@ export function subscribeToUserKhdh(
   userId: string,
   onRemoteUpdate: (data: any) => void
 ): () => void {
+  if (shouldSkipFirestoreWrite()) {
+    return () => {};
+  }
   const docRef = doc(db, 'khdh_data', userId || 'shared');
   return onSnapshot(
     docRef,
@@ -605,7 +646,8 @@ export function subscribeToUserKhdh(
       }
     },
     (err) => {
-      console.warn('Real-time KHDH listener notice:', err);
+      checkFirestoreQuotaExceeded(err);
+      console.warn('Real-time KHDH listener notice:', err?.message || err);
     }
   );
 }
@@ -639,6 +681,9 @@ export async function saveKhdhDataToFirestore(
     configuredClasses?: ConfiguredClass[];
   }
 ): Promise<boolean> {
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
   const sanitized = sanitizeFirestoreData(data);
   try {
     const docRef = doc(db, 'khdh_data', userId || 'shared');
@@ -649,6 +694,7 @@ export async function saveKhdhDataToFirestore(
     });
     return true;
   } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, KHDH data saved locally only.');
       return false;
@@ -687,6 +733,9 @@ export async function saveLessonPlansToFirestore(
   userId: string,
   plans: DetailedLessonPlan[]
 ): Promise<boolean> {
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
   const sanitized = sanitizeFirestoreData({ plans });
   try {
     const docRef = doc(db, 'lesson_plans', userId || 'shared');
@@ -697,6 +746,7 @@ export async function saveLessonPlansToFirestore(
     });
     return true;
   } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, Lesson Plans saved locally only.');
       return false;
@@ -747,6 +797,9 @@ export async function fetchSystemConfig(): Promise<any> {
  * Save global system configuration
  */
 export async function saveSystemConfig(config: any): Promise<boolean> {
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
   try {
     const docRef = doc(db, 'system', 'config');
     await setDoc(docRef, {
@@ -754,8 +807,9 @@ export async function saveSystemConfig(config: any): Promise<boolean> {
       updatedAt: new Date().toISOString()
     });
     return true;
-  } catch (err) {
-    console.error('Failed to save system config:', err);
+  } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
+    console.warn('Failed to save system config:', err);
     return false;
   }
 }
@@ -824,17 +878,25 @@ export async function fetchContactInfoFromFirestore(): Promise<ContactInfo> {
 }
 
 export async function saveContactInfoToFirestore(info: ContactInfo): Promise<boolean> {
+  const dataToSave = {
+    ...info,
+    updatedAt: new Date().toISOString()
+  };
   try {
-    const dataToSave = {
-      ...info,
-      updatedAt: new Date().toISOString()
-    };
     localStorage.setItem(SYSTEM_CONTACT_KEY, JSON.stringify(dataToSave));
+  } catch (e) {}
+
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
+
+  try {
     const docRef = doc(db, 'system', 'contact');
     await setDoc(docRef, dataToSave);
     return true;
-  } catch (err) {
-    console.error('Failed to save contact info to firestore:', err);
+  } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
+    console.warn('Failed to save contact info to firestore:', err);
     return false;
   }
 }
@@ -851,6 +913,10 @@ export async function saveSharedGameToFirestore(shareId: string, gameData: any):
     console.warn('Failed to save shared game to local storage:', e);
   }
 
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
+
   try {
     const docRef = doc(db, 'shared_dragdrop_games', shareId);
     await setDoc(docRef, {
@@ -859,7 +925,8 @@ export async function saveSharedGameToFirestore(shareId: string, gameData: any):
       createdAt: new Date().toISOString()
     });
     return true;
-  } catch (err) {
+  } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
     console.warn('Failed to save shared game to Firestore:', err);
     return false;
   }
@@ -996,6 +1063,9 @@ export function subscribeToUrgentReport(
   reportId: string,
   onUpdate: (report: UrgentReportItem | null) => void
 ): () => void {
+  if (shouldSkipFirestoreWrite()) {
+    return () => {};
+  }
   const docKey = reportId.startsWith('report_') ? reportId : `report_${reportId}`;
   const docRef = getReportDocRef(reportId);
 
@@ -1017,7 +1087,8 @@ export function subscribeToUrgentReport(
       }
     },
     (err) => {
-      console.warn(`Real-time listener notice for urgent_reports/${docKey}:`, err);
+      checkFirestoreQuotaExceeded(err);
+      console.warn(`Real-time listener notice for urgent_reports/${docKey}:`, err?.message || err);
     }
   );
 }
@@ -1031,18 +1102,24 @@ export async function deleteUrgentReportFromFirestore(reportId: string): Promise
     localStorage.removeItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
   } catch (e) {}
 
+  if (shouldSkipFirestoreWrite()) {
+    return true;
+  }
+
   try {
     const docRef = getReportDocRef(reportId);
     await deleteDoc(docRef);
-  } catch (err) {
-    console.warn(`Delete error for urgent_reports/${docKey}:`, err);
+  } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
+    console.warn(`Delete notice for urgent_reports/${docKey}:`, err);
   }
 
   try {
     const wsRef = doc(db, 'workspaces', docKey);
     await deleteDoc(wsRef);
-  } catch (err) {
-    console.warn(`Delete error for workspaces/${docKey}:`, err);
+  } catch (err: any) {
+    checkFirestoreQuotaExceeded(err);
+    console.warn(`Delete notice for workspaces/${docKey}:`, err);
   }
 
   return true;
