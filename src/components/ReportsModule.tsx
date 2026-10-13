@@ -285,6 +285,12 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     );
   };
 
+  const handleToggleColumnRequired = (colId: string) => {
+    setWizardColumns((prev) =>
+      prev.map((c) => (c.id === colId ? { ...c, required: !c.required } : c))
+    );
+  };
+
   const handleSaveNewReport = async () => {
     if (!wizardTitle.trim()) {
       alert('Vui lòng nhập tên cho mẫu báo cáo!');
@@ -2051,18 +2057,32 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                                   />
                                   <span className="truncate">{col.subName || col.name}</span>
                                 </label>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleColumnType(col.id)}
-                                  className={`text-[10px] px-2 py-0.5 rounded-lg border font-bold cursor-pointer transition-colors shrink-0 ${
-                                    col.type === 'number'
-                                      ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
-                                      : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
-                                  }`}
-                                  title="Bấm để chuyển đổi giữa Kiểu Chữ và Kiểu Số"
-                                >
-                                  {col.type === 'number' ? '🔢 Số' : '🔤 Chữ'}
-                                </button>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleColumnType(col.id)}
+                                    className={`text-[10px] px-2 py-0.5 rounded-lg border font-bold cursor-pointer transition-colors ${
+                                      col.type === 'number'
+                                        ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+                                        : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
+                                    }`}
+                                    title="Bấm để chuyển đổi giữa Kiểu Chữ và Kiểu Số"
+                                  >
+                                    {col.type === 'number' ? '🔢 Số' : '🔤 Chữ'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleColumnRequired(col.id)}
+                                    className={`text-[10px] px-2 py-0.5 rounded-lg border font-bold cursor-pointer transition-colors ${
+                                      col.required
+                                        ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+                                        : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                                    }`}
+                                    title="Bấm để bật/tắt Bắt buộc nhập (*)"
+                                  >
+                                    {col.required ? '🔴 Bắt buộc *' : '⚪ Tùy chọn'}
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -2102,7 +2122,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                                   />
                                   <span className="truncate">{col.name}</span>
                                 </label>
-                                <div className="flex items-center gap-1.5 shrink-0">
+                                <div className="flex items-center gap-1 shrink-0">
                                   <button
                                     type="button"
                                     onClick={() => handleToggleColumnType(col.id)}
@@ -2114,6 +2134,18 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                                     title="Bấm để chuyển đổi giữa Kiểu Chữ và Kiểu Số"
                                   >
                                     {col.type === 'number' ? '🔢 Số' : '🔤 Chữ'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleColumnRequired(col.id)}
+                                    className={`text-[10px] px-2 py-0.5 rounded-lg border font-bold cursor-pointer transition-colors ${
+                                      col.required
+                                        ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+                                        : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                                    }`}
+                                    title="Bấm để bật/tắt Bắt buộc nhập (*)"
+                                  >
+                                    {col.required ? '🔴 Bắt buộc *' : '⚪ Tùy chọn'}
                                   </button>
                                   {col.id === wizardIdentifierColId && (
                                     <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-100 text-indigo-800 font-extrabold">
@@ -2397,7 +2429,11 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
               <div className="space-y-3.5">
                 {(() => {
                   const inputCols = currentReport.columns.filter(
-                    (c) => c.isInputField || c.isIdentifier || c.id === currentReport.identifierColumnId
+                    (c) =>
+                      (c.isInputField || c.isIdentifier || c.id === currentReport.identifierColumnId) &&
+                      c.id !== 'col_stt' &&
+                      c.name.trim().toLowerCase() !== 'stt' &&
+                      (!c.subName || c.subName.trim().toLowerCase() !== 'stt')
                   );
                   const blocks = getOrderedFormFieldBlocks(inputCols);
 

@@ -1114,8 +1114,18 @@ export async function submitReportRowToFirestore(
       const nowIso = new Date().toISOString();
       const updatedRows = [...(current.rows || [])];
 
-      // Identify the main matching column (e.g. Lớp or Họ tên)
-      const idCol = current.columns.find((c) => c.id === current.identifierColumnId || c.isIdentifier) || current.columns[1] || current.columns[0];
+      // Identify STT column and non-STT columns
+      const sttCol = current.columns.find((c) => c.id === 'col_stt' || c.name.trim().toLowerCase() === 'stt');
+      const nonSttCols = current.columns.filter((c) => c.id !== 'col_stt' && c.name.trim().toLowerCase() !== 'stt');
+
+      // Identify the main matching column (e.g. Lớp or Họ tên) excluding STT
+      const idCol = nonSttCols.find((c) => c.id === current.identifierColumnId || c.isIdentifier) ||
+        nonSttCols.find((c) => {
+          const n = (c.subName || c.name).toLowerCase();
+          return n.includes('lớp') || n.includes('họ tên') || n.includes('đơn vị') || n.includes('tên');
+        }) ||
+        nonSttCols[0] ||
+        current.columns[0];
 
       let targetIndex = -1;
 
@@ -1153,6 +1163,13 @@ export async function submitReportRowToFirestore(
           _submittedAt: nowIso,
           _submittedBy: submitterName || 'Giáo viên',
           _isComplete: true
+        });
+      }
+
+      // Auto-compute sequential STT for all rows if STT column exists
+      if (sttCol) {
+        updatedRows.forEach((r, idx) => {
+          r[sttCol.id] = idx + 1;
         });
       }
 

@@ -321,24 +321,42 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   }, [reportId]);
 
   // Ensure ALL hooks are called unconditionally BEFORE any early return statements to avoid React Error #310
+  const isSttCol = (col: ReportColumn) =>
+    col.id === 'col_stt' ||
+    col.name.trim().toLowerCase() === 'stt' ||
+    (col.subName && col.subName.trim().toLowerCase() === 'stt');
+
+  // Ensure STT column is hidden and non-STT column is picked as primary identifier
   const idCol = useMemo(() => {
     if (!report || !report.columns) return null;
-    return report.columns.find((c) => c.id === report.identifierColumnId || c.isIdentifier) || report.columns[1] || report.columns[0] || null;
+    const nonStt = report.columns.filter((c) => !isSttCol(c));
+    return (
+      nonStt.find((c) => c.id === report.identifierColumnId || c.isIdentifier) ||
+      nonStt.find((c) => {
+        const n = (c.subName || c.name).toLowerCase();
+        return n.includes('lớp') || n.includes('họ tên') || n.includes('đơn vị') || n.includes('tên');
+      }) ||
+      nonStt[0] ||
+      null
+    );
   }, [report]);
 
   const inputColumns = useMemo(() => {
     if (!report || !report.columns) return [];
     
+    // Completely exclude STT columns so STT is hidden from input form
+    const nonSttCols = report.columns.filter((c) => !isSttCol(c));
+
     const baseMap = new Map<string, ReportColumn>();
     
-    // Always include the main identifier column first if found
+    // Always include the main non-STT identifier column first if found
     if (idCol) {
       baseMap.set(idCol.id, idCol);
     }
     
-    // Include all input fields and identifier fields
-    report.columns.forEach((c) => {
-      if (c.isInputField || c.isIdentifier || c.id === report.identifierColumnId) {
+    // Include all non-STT input fields and identifier fields
+    nonSttCols.forEach((c) => {
+      if (c.isInputField || c.isIdentifier || (idCol && c.id === idCol.id)) {
         baseMap.set(c.id, c);
       }
     });
