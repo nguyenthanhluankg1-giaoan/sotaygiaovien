@@ -43,6 +43,7 @@ import * as XLSX from 'xlsx';
 import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import { DEFAULT_URGENT_REPORTS } from '../utils/helpers';
+import { buildPublicShareUrl } from '../utils/urlHelper';
 import {
   AppState,
   UserAccount,
@@ -743,10 +744,8 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     }
   };
 
-  // Share URL
-  const shareUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}?page=report_form&reportId=${currentReport?.id || ''}`
-    : '';
+  // Share URL (Switches ais-dev- to ais-pre- in sandbox so link is publicly accessible)
+  const shareUrl = currentReport?.id ? buildPublicShareUrl('report_form', currentReport.id) : '';
 
   // Dynamically generate QR code data URL whenever current report / shareUrl changes
   useEffect(() => {
@@ -780,9 +779,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     setIsShareModalOpen(true);
     setIsSharingSyncing(true);
 
-    const targetUrl = typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?page=report_form&reportId=${reportToShare.id}`
-      : '';
+    const targetUrl = buildPublicShareUrl('report_form', reportToShare.id);
 
     if (targetUrl) {
       QRCode.toDataURL(targetUrl, {

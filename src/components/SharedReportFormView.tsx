@@ -306,6 +306,27 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     }
   };
 
+  // Ensure ALL hooks are called unconditionally BEFORE any early return statements to avoid React Error #310
+  const idCol = useMemo(() => {
+    if (!report || !report.columns) return null;
+    return report.columns.find((c) => c.id === report.identifierColumnId || c.isIdentifier) || report.columns[1] || report.columns[0] || null;
+  }, [report]);
+
+  const inputColumns = useMemo(() => {
+    if (!report || !report.columns) return [];
+    const base = report.columns.filter((c) => c.isInputField);
+    // If creating a new row, ensure idCol is editable in the form so user can enter name/class
+    if (isCreatingNew && idCol && !base.some((c) => c.id === idCol.id)) {
+      const colIndex = report.columns.findIndex((c) => c.id === idCol.id);
+      const list = [...base];
+      list.splice(colIndex >= 0 ? colIndex : 0, 0, idCol);
+      return list;
+    }
+    return base;
+  }, [report, isCreatingNew, idCol]);
+
+  const isClosed = report ? report.status === 'closed' : false;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
@@ -356,21 +377,6 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   }
 
   if (!report) return null;
-
-  const idCol = report.columns.find((c) => c.id === report.identifierColumnId || c.isIdentifier) || report.columns[1] || report.columns[0];
-  const inputColumns = useMemo(() => {
-    if (!report) return [];
-    const base = report.columns.filter((c) => c.isInputField);
-    // If creating a new row, ensure idCol is editable in the form so user can enter name/class
-    if (isCreatingNew && idCol && !base.some((c) => c.id === idCol.id)) {
-      const colIndex = report.columns.findIndex((c) => c.id === idCol.id);
-      const list = [...base];
-      list.splice(colIndex >= 0 ? colIndex : 0, 0, idCol);
-      return list;
-    }
-    return base;
-  }, [report, isCreatingNew, idCol]);
-  const isClosed = report.status === 'closed';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50/80 via-emerald-50/40 to-teal-100/50 py-6 px-3 sm:px-6 flex flex-col justify-between">
