@@ -25,6 +25,9 @@ import {
   ReportColumn
 } from '../types';
 import { getDefaultState, getDefaultStateForUser } from '../utils/helpers';
+import { checkAndMarkQuotaExceeded, isFirestoreQuotaExceeded } from '../utils/quotaHelper';
+
+export { checkAndMarkQuotaExceeded, isFirestoreQuotaExceeded };
 
 // Operation types for error handling
 enum OperationType {
@@ -431,6 +434,7 @@ export async function saveAppStateToFirestore(
 
     return true;
   } catch (err: any) {
+    checkAndMarkQuotaExceeded(err);
     if (
       err?.code === 'unavailable' ||
       err?.code === 'resource-exhausted' ||
@@ -913,6 +917,7 @@ export async function saveUrgentReportToFirestore(report: UrgentReportItem): Pro
     await setDoc(docRef, sanitized);
     return true;
   } catch (err: any) {
+    checkAndMarkQuotaExceeded(err);
     if (
       err?.code === 'permission-denied' ||
       err?.code === 'resource-exhausted' ||
@@ -1002,6 +1007,33 @@ export async function deleteUrgentReportFromFirestore(reportId: string): Promise
   } catch (err: any) {
     console.warn(`Delete urgent report Firestore warning for ${path}:`, err?.message || err);
     return true; // Local storage removal succeeded
+  }
+}
+
+/**
+ * Delete multiple Urgent Reports from Firestore
+ */
+export async function deleteMultipleUrgentReportsFromFirestore(reportIds: string[]): Promise<boolean> {
+  if (!Array.isArray(reportIds) || reportIds.length === 0) return true;
+  await Promise.allSettled(reportIds.map((id) => deleteUrgentReportFromFirestore(id)));
+  return true;
+}
+
+/**
+ * Delete a single row from an Urgent Report
+ */
+export async function deleteReportRowFromFirestore(reportId: string, rowId: string): Promise<boolean> {
+  try {
+    const report = await fetchUrgentReportFromFirestore(reportId);
+    if (!report) return false;
+    const updatedRows = report.rows.filter((r) => r.id !== rowId);
+    return await saveUrgentReportToFirestore({
+      ...report,
+      rows: updatedRows
+    });
+  } catch (e) {
+    console.warn(`Delete report row error for ${reportId} - ${rowId}:`, e);
+    return false;
   }
 }
 

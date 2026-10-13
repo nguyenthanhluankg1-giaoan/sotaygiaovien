@@ -2,7 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeFirestore, getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import fileConfig from '../firebase-applet-config.json';
-import { checkAndMarkQuotaExceeded } from './services/dbService';
+import { checkAndMarkQuotaExceeded } from './utils/quotaHelper';
 
 // Support both embedded json config and Vercel/Vite environment variables
 const env = (import.meta as any).env || {};
