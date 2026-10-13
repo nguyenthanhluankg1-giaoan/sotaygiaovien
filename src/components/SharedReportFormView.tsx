@@ -17,14 +17,14 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
-  Check,
   User,
   ListOrdered
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { UrgentReportItem, ReportRow, ReportColumn, UserAccount } from '../types';
-import { fetchUrgentReportFromFirestore, submitReportRowToFirestore } from '../services/dbService';
+import { fetchUrgentReportFromFirestore, submitReportRowToFirestore, saveUrgentReportToFirestore } from '../services/dbService';
 import { isPersonNameOrTextColumn, getOrderedFormFieldBlocks } from '../utils/excelReportHelper';
+import { DEFAULT_URGENT_REPORTS } from '../utils/helpers';
 
 interface SharedReportFormViewProps {
   reportId: string;
@@ -88,6 +88,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   const [duplicateResolution, setDuplicateResolution] = useState<'create_new' | 'overwrite'>('create_new');
   const [listSearchTerm, setListSearchTerm] = useState<string>('');
   const [listStatusFilter, setListStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
+  const [retryCount, setRetryCount] = useState<number>(0);
 
   useEffect(() => {
     let active = true;
@@ -95,7 +96,15 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
       setLoading(true);
       setErrorMsg('');
       try {
-        const data = await fetchUrgentReportFromFirestore(reportId);
+        let data = await fetchUrgentReportFromFirestore(reportId);
+        // Fallback: If not yet in Firestore, check DEFAULT_URGENT_REPORTS
+        if (!data) {
+          const defaultMatch = DEFAULT_URGENT_REPORTS.find((r) => r.id === reportId);
+          if (defaultMatch) {
+            data = defaultMatch;
+            saveUrgentReportToFirestore(defaultMatch).catch(() => {});
+          }
+        }
         if (active) {
           if (data) {
             // Automatically ensure Họ và tên and text columns are type: 'text'
@@ -120,7 +129,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               }
             }
           } else {
-            setErrorMsg('Không tìm thấy thông tin mẫu báo cáo trên hệ thống.');
+            setErrorMsg('Không tìm thấy thông tin mẫu báo cáo trên hệ thống. Vui lòng kiểm tra lại đường link hoặc liên hệ Quản trị viên.');
           }
         }
       } catch (err: any) {
@@ -138,7 +147,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     return () => {
       active = false;
     };
-  }, [reportId]);
+  }, [reportId, retryCount]);
 
   // When selectedRowId changes, update formData
   const handleSelectRow = (rowId: string) => {
@@ -316,16 +325,31 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
           <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
             <AlertCircle className="w-8 h-8" />
           </div>
-          <h2 className="text-lg font-black text-slate-900">Không thể mở biểu mẫu</h2>
+          <h2 className="text-lg font-black text-slate-900">Không thể mở biểu mẫu báo cáo</h2>
           <p className="text-xs text-slate-600 leading-relaxed">{errorMsg}</p>
-          {onBackToApp && (
+          <div className="pt-2 flex flex-col gap-2">
             <button
-              onClick={onBackToApp}
-              className="w-full py-2.5 px-4 rounded-xl bg-teal-600 text-white font-extrabold text-xs cursor-pointer hover:bg-teal-700 transition-all"
+              type="button"
+              onClick={() => {
+                setErrorMsg('');
+                setLoading(true);
+                setRetryCount((c) => c + 1);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs cursor-pointer flex items-center justify-center gap-1.5 transition-all shadow-sm"
             >
-              Quay lại ứng dụng
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Thử tải lại biểu mẫu</span>
             </button>
-          )}
+            {onBackToApp && (
+              <button
+                type="button"
+                onClick={onBackToApp}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs cursor-pointer transition-all"
+              >
+                Quay lại ứng dụng
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

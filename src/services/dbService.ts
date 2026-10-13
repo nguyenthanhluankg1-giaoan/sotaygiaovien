@@ -24,7 +24,7 @@ import {
   ReportRow,
   ReportColumn
 } from '../types';
-import { getDefaultState, getDefaultStateForUser } from '../utils/helpers';
+import { getDefaultState, getDefaultStateForUser, DEFAULT_URGENT_REPORTS } from '../utils/helpers';
 import { checkAndMarkQuotaExceeded, isFirestoreQuotaExceeded } from '../utils/quotaHelper';
 
 export { checkAndMarkQuotaExceeded, isFirestoreQuotaExceeded };
@@ -952,13 +952,52 @@ export async function fetchUrgentReportFromFirestore(reportId: string): Promise<
     console.warn(`Firestore read warning for ${path}:`, err);
   }
 
-  // Fallback to local storage cache if network is slow/offline
+  // Fallback 1: Local storage specific report cache
   try {
     const cached = localStorage.getItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`);
     if (cached) {
       return JSON.parse(cached);
     }
   } catch (e) {}
+
+  // Fallback 2: Check DEFAULT_URGENT_REPORTS (e.g. sample report BHYT)
+  const defaultMatch = DEFAULT_URGENT_REPORTS.find((r) => r.id === reportId);
+  if (defaultMatch) {
+    // Asynchronously seed it to Firestore so future reads hit cloud directly
+    try {
+      const docRef = doc(db, 'urgent_reports', defaultMatch.id);
+      setDoc(docRef, sanitizeFirestoreData({
+        ...defaultMatch,
+        updatedAt: new Date().toISOString()
+      })).catch(() => {});
+    } catch {}
+    return defaultMatch;
+  }
+
+  // Fallback 3: Check any cached app state in localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('app_state') || key.startsWith('classroom_app_state') || key.startsWith('workspace_'))) {
+          const raw = localStorage.getItem(key);
+          if (raw && raw.includes(reportId)) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed?.urgentReports)) {
+              const matched = parsed.urgentReports.find((r: UrgentReportItem) => r.id === reportId);
+              if (matched) {
+                try {
+                  localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(matched));
+                  saveUrgentReportToFirestore(matched).catch(() => {});
+                } catch {}
+                return matched;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
 
   return null;
 }

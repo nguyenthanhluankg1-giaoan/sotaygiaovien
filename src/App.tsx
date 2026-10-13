@@ -6,7 +6,8 @@ import {
   saveStoredState,
   getDefaultState,
   getDefaultStateForUser,
-  getAccountExpirationInfo
+  getAccountExpirationInfo,
+  DEFAULT_URGENT_REPORTS
 } from './utils/helpers';
 import {
   fetchUsersFromFirestore,
@@ -22,7 +23,8 @@ import {
   fetchContactInfoFromFirestore,
   saveContactInfoToFirestore,
   getLocalCachedContactInfo,
-  DEFAULT_CONTACT_INFO
+  DEFAULT_CONTACT_INFO,
+  saveUrgentReportToFirestore
 } from './services/dbService';
 
 import { LoginScreen } from './components/LoginScreen';
@@ -134,6 +136,15 @@ export default function App() {
         }
       } catch (err) {
         console.warn('Cloud users initialization error:', err);
+      }
+
+      // Guarantee urgent reports exist in Firestore so shared links open properly without login
+      try {
+        DEFAULT_URGENT_REPORTS.forEach((rep) => {
+          saveUrgentReportToFirestore(rep).catch(() => {});
+        });
+      } catch (err) {
+        console.warn('Urgent reports pre-sync notice:', err);
       }
 
       try {
