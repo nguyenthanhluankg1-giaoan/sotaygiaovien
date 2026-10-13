@@ -5,7 +5,8 @@ import {
   getDocs,
   setDoc,
   deleteDoc,
-  onSnapshot
+  onSnapshot,
+  runTransaction
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
@@ -1078,6 +1079,7 @@ export async function deleteReportRowFromFirestore(reportId: string, rowId: stri
 
 /**
  * Submit / Update a single row in an Urgent Report from a shared public or internal form
+ * Features automatic atomic identifier matching (Lớp / Họ tên) and concurrent submission safety via runTransaction
  */
 export async function submitReportRowToFirestore(
   reportId: string,
@@ -1086,63 +1088,95 @@ export async function submitReportRowToFirestore(
   submitterName?: string
 ): Promise<{ success: boolean; report?: UrgentReportItem; error?: string }> {
   try {
-    // 1. Fetch current report state
-    const current = await fetchUrgentReportFromFirestore(reportId);
-    if (!current) {
-      return { success: false, error: 'Không tìm thấy mẫu báo cáo trên hệ thống.' };
-    }
+    const docRef = doc(db, 'urgent_reports', reportId);
 
-    if (current.status === 'closed') {
-      return { success: false, error: 'Mẫu báo cáo này đã khóa nhận số liệu!' };
-    }
+    const updatedReport = await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(docRef);
+      let current: UrgentReportItem | null = null;
 
-    const nowIso = new Date().toISOString();
-    const updatedRows = [...current.rows];
+      if (snap.exists()) {
+        current = snap.data() as UrgentReportItem;
+      } else {
+        const defaultMatch = DEFAULT_URGENT_REPORTS.find((r) => r.id === reportId);
+        if (defaultMatch) {
+          current = defaultMatch;
+        }
+      }
 
-    if (isNewRow) {
-      // Append new row
-      updatedRows.push({
-        ...submittedRow,
-        _submittedAt: nowIso,
-        _submittedBy: submitterName || 'Người dùng',
-        _isComplete: true
-      });
-    } else {
-      // Update existing row matching id
-      const index = updatedRows.findIndex((r) => r.id === submittedRow.id);
-      if (index >= 0) {
-        updatedRows[index] = {
-          ...updatedRows[index],
+      if (!current) {
+        throw new Error('Không tìm thấy mẫu báo cáo trên hệ thống.');
+      }
+
+      if (current.status === 'closed') {
+        throw new Error('Mẫu báo cáo này đã khóa nhận số liệu!');
+      }
+
+      const nowIso = new Date().toISOString();
+      const updatedRows = [...(current.rows || [])];
+
+      // Identify the main matching column (e.g. Lớp or Họ tên)
+      const idCol = current.columns.find((c) => c.id === current.identifierColumnId || c.isIdentifier) || current.columns[1] || current.columns[0];
+
+      let targetIndex = -1;
+
+      // Smart matching by identifier column value (e.g. "1A1", "1/1", "Lớp 1A1")
+      if (idCol && submittedRow[idCol.id] !== undefined && String(submittedRow[idCol.id]).trim() !== '') {
+        const normalizeStr = (s: string) => String(s).trim().toLowerCase().replace(/^lớp\s+/i, '').replace(/\s+/g, '');
+        const targetVal = normalizeStr(String(submittedRow[idCol.id]));
+
+        targetIndex = updatedRows.findIndex((r) => {
+          const rowVal = r[idCol.id] !== undefined && r[idCol.id] !== null ? normalizeStr(String(r[idCol.id])) : '';
+          return rowVal === targetVal && targetVal !== '';
+        });
+      }
+
+      // Secondary fallback search by row id
+      if (targetIndex === -1 && submittedRow.id && !submittedRow.id.startsWith('new_row_')) {
+        targetIndex = updatedRows.findIndex((r) => r.id === submittedRow.id);
+      }
+
+      if (targetIndex >= 0) {
+        // Update existing row safely in place without losing existing fields
+        updatedRows[targetIndex] = {
+          ...updatedRows[targetIndex],
           ...submittedRow,
           _submittedAt: nowIso,
-          _submittedBy: submitterName || updatedRows[index]._submittedBy || 'Người dùng',
+          _submittedBy: submitterName || updatedRows[targetIndex]._submittedBy || 'Giáo viên',
           _isComplete: true
         };
       } else {
+        // Append as new row
+        const newId = `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         updatedRows.push({
           ...submittedRow,
+          id: submittedRow.id && !submittedRow.id.startsWith('new_row_') ? submittedRow.id : newId,
           _submittedAt: nowIso,
-          _submittedBy: submitterName || 'Người dùng',
+          _submittedBy: submitterName || 'Giáo viên',
           _isComplete: true
         });
       }
-    }
 
-    const updatedReport: UrgentReportItem = {
-      ...current,
-      rows: updatedRows,
-      submissionsCount: (current.submissionsCount || 0) + 1,
-      updatedAt: nowIso
-    };
+      const finalReport: UrgentReportItem = {
+        ...current,
+        rows: updatedRows,
+        submissionsCount: updatedRows.filter((r) => r._isComplete).length,
+        updatedAt: nowIso
+      };
 
-    const saved = await saveUrgentReportToFirestore(updatedReport);
-    if (saved) {
-      return { success: true, report: updatedReport };
-    } else {
-      return { success: false, error: 'Không thể ghi số liệu lên Cloud Firestore.' };
-    }
+      const cleanData = sanitizeFirestoreData(finalReport);
+      transaction.set(docRef, cleanData);
+
+      return finalReport;
+    });
+
+    // Save to local cache
+    try {
+      localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(updatedReport));
+    } catch (e) {}
+
+    return { success: true, report: updatedReport };
   } catch (err: any) {
-    console.error('submitReportRowToFirestore error:', err);
+    console.error('submitReportRowToFirestore transaction error:', err);
     return { success: false, error: err?.message || 'Lỗi khi gửi số liệu báo cáo.' };
   }
 }

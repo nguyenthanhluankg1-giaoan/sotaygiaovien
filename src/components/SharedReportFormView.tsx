@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { UrgentReportItem, ReportRow, ReportColumn, UserAccount } from '../types';
-import { fetchUrgentReportFromFirestore, submitReportRowToFirestore, saveUrgentReportToFirestore } from '../services/dbService';
+import { fetchUrgentReportFromFirestore, submitReportRowToFirestore, saveUrgentReportToFirestore, subscribeToUrgentReport } from '../services/dbService';
 import { isPersonNameOrTextColumn, getOrderedFormFieldBlocks } from '../utils/excelReportHelper';
 import { DEFAULT_URGENT_REPORTS } from '../utils/helpers';
 
@@ -243,29 +243,20 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     setErrorMsg('');
 
     try {
-      let targetRowId = selectedRowId;
-      let isNew = isCreatingNew;
-
-      if (duplicateMatchInfo) {
-        if (duplicateResolution === 'create_new') {
-          isNew = true;
-          targetRowId = `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        } else {
-          isNew = false;
-          targetRowId = duplicateMatchInfo.row.id;
-        }
-      }
+      const targetRowId = autoRecognitionInfo?.isMatch && autoRecognitionInfo.matchedRow
+        ? autoRecognitionInfo.matchedRow.id
+        : selectedRowId || `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
       const rowToSubmit: ReportRow = {
-        id: targetRowId || `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: targetRowId,
         ...formData
       };
 
       const result = await submitReportRowToFirestore(
         report.id,
         rowToSubmit,
-        isNew,
-        submitterName || currentUser?.name || 'Giáo viên'
+        !autoRecognitionInfo?.isMatch,
+        submitterName || currentUser?.name || (idCol && formData[idCol.id] ? String(formData[idCol.id]) : 'Giáo viên')
       );
 
       if (result.success && result.report) {
@@ -276,19 +267,14 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
         );
         setReport({ ...result.report, rows: sortedUpdatedRows });
 
-        const idCol = report.columns.find((c) => c.id === report.identifierColumnId || c.isIdentifier) || report.columns[1] || report.columns[0];
         const rowTitle = idCol && rowToSubmit[idCol.id] ? String(rowToSubmit[idCol.id]) : 'số liệu';
 
         if (keepOpen) {
-          setSuccessMsg(`🎉 Đã lưu thành công số liệu "${rowTitle}"! Biểu mẫu đã sẵn sàng để Thầy/Cô tiếp tục nhập đối tượng tiếp theo.`);
-          // Reset form for next entry
+          setSuccessMsg(`🎉 Đã lưu thành công số liệu "${rowTitle}"! Thầy/Cô có thể tiếp tục nhập số liệu cho đối tượng khác.`);
           setFormData({});
-          setIsCreatingNew(true);
-          setSelectedRowId(`row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`);
-          setDuplicateMatchInfo(null);
-          setDuplicateResolution('create_new');
+          setSelectedRowId('');
         } else {
-          setSuccessMsg(`🎉 Đã gửi số liệu báo cáo "${rowTitle}" thành công! Dữ liệu đã được cập nhật vào bảng tổng hợp của nhà trường.`);
+          setSuccessMsg(`🎉 Đã gửi số liệu báo cáo "${rowTitle}" thành công! Dữ liệu đã được cập nhật đồng bộ vào bảng tổng hợp.`);
           confetti({
             particleCount: 80,
             spread: 70,
@@ -306,6 +292,25 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     }
   };
 
+  // Subscribe to real-time report changes from Cloud Firestore (concurrent submission safety)
+  useEffect(() => {
+    if (!reportId) return;
+    const unsub = subscribeToUrgentReport(reportId, (remote) => {
+      if (remote) {
+        const sanitizedColumns = (remote.columns || []).map((c) => {
+          const isNameOrText = isPersonNameOrTextColumn(c.name) || isPersonNameOrTextColumn(c.subName || '');
+          return {
+            ...c,
+            type: isNameOrText ? ('text' as const) : c.type
+          };
+        });
+        const sortedRows = sortRowsNaturally(remote.rows || [], sanitizedColumns, remote.identifierColumnId);
+        setReport({ ...remote, columns: sanitizedColumns, rows: sortedRows });
+      }
+    });
+    return () => unsub();
+  }, [reportId]);
+
   // Ensure ALL hooks are called unconditionally BEFORE any early return statements to avoid React Error #310
   const idCol = useMemo(() => {
     if (!report || !report.columns) return null;
@@ -315,7 +320,6 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   const inputColumns = useMemo(() => {
     if (!report || !report.columns) return [];
     const base = report.columns.filter((c) => c.isInputField);
-    // If creating a new row, ensure idCol is editable in the form so user can enter name/class
     if (isCreatingNew && idCol && !base.some((c) => c.id === idCol.id)) {
       const colIndex = report.columns.findIndex((c) => c.id === idCol.id);
       const list = [...base];
@@ -324,6 +328,36 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     }
     return base;
   }, [report, isCreatingNew, idCol]);
+
+  // Real-time automatic recognition of submitted row based on identifier column (Lớp / Họ tên)
+  const autoRecognitionInfo = useMemo(() => {
+    if (!report || !report.rows || !idCol) return null;
+    const enteredVal = formData[idCol.id];
+    if (enteredVal === undefined || enteredVal === null || String(enteredVal).trim() === '') {
+      return null;
+    }
+    const searchVal = String(enteredVal).trim().toLowerCase();
+    const matched = report.rows.find((r) => {
+      const rowVal = r[idCol.id] !== undefined && r[idCol.id] !== null ? String(r[idCol.id]).trim().toLowerCase() : '';
+      return rowVal === searchVal;
+    });
+
+    if (matched) {
+      return {
+        isMatch: true,
+        matchedRow: matched,
+        title: String(matched[idCol.id] || searchVal),
+        isComplete: Boolean(matched._isComplete),
+        submittedBy: matched._submittedBy
+      };
+    }
+    return {
+      isMatch: false,
+      matchedRow: null,
+      title: String(enteredVal).trim(),
+      isComplete: false
+    };
+  }, [report, formData, idCol]);
 
   const isClosed = report ? report.status === 'closed' : false;
 
@@ -379,14 +413,14 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   if (!report) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50/80 via-emerald-50/40 to-teal-100/50 py-6 px-3 sm:px-6 flex flex-col justify-between">
-      <div className="max-w-2xl mx-auto w-full space-y-4">
-        {/* Top actions & brand */}
-        <div className="flex items-center justify-between gap-2">
+    <div className="min-h-screen bg-slate-50 text-slate-800 py-4 px-3 sm:px-6 lg:px-8 flex flex-col justify-between">
+      <div className="max-w-7xl mx-auto w-full space-y-4 sm:space-y-5">
+        {/* Top actions & brand header bar */}
+        <div className="flex items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
           {onBackToApp ? (
             <button
               onClick={onBackToApp}
-              className="px-3 py-1.5 rounded-xl bg-white/90 hover:bg-white text-teal-800 border border-teal-200 font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>{currentUser ? 'Về bảng điều khiển' : 'Đăng nhập tài khoản'}</span>
@@ -396,91 +430,55 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               <div className="w-7 h-7 rounded-xl bg-teal-600 text-white flex items-center justify-center font-black text-xs">
                 TY1
               </div>
-              <span className="text-xs font-black text-teal-900">Trường TH Thạnh Yên 1</span>
+              <span className="text-xs sm:text-sm font-black text-teal-900">Trường TH Thạnh Yên 1</span>
             </div>
           )}
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {report.urgentLevel === 'very_urgent' && (
-              <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white font-black text-[10px] animate-pulse">
+              <span className="px-2.5 py-1 rounded-full bg-rose-600 text-white font-black text-[10px] sm:text-xs animate-pulse">
                 ⚡ HỎA TỐC
               </span>
             )}
             {report.urgentLevel === 'urgent' && (
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-black text-[10px]">
+              <span className="px-2.5 py-1 rounded-full bg-amber-500 text-white font-black text-[10px] sm:text-xs">
                 🔥 BÁO CÁO GẤP
               </span>
             )}
             {isClosed ? (
-              <span className="px-2.5 py-0.5 rounded-full bg-slate-700 text-white font-black text-[10px] flex items-center gap-1">
-                <Lock className="w-3 h-3" />
+              <span className="px-2.5 py-1 rounded-full bg-slate-700 text-white font-black text-[10px] sm:text-xs flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5" />
                 <span>ĐÃ KHÓA</span>
               </span>
             ) : (
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px]">
-                🟢 ĐANG NHẬN
+              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] sm:text-xs">
+                🟢 ĐANG NHẬN SỐ LIỆU
               </span>
             )}
           </div>
         </div>
 
-        {/* Banner: Public direct input without requiring login */}
+        {/* Public Share Banner */}
         {!currentUser && (
-          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300 rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 text-emerald-950 shadow-xs animate-in fade-in">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
-                <Sparkles className="w-4 h-4" />
+          <div className="bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 text-white rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5" />
               </div>
-              <div className="space-y-0.5">
-                <p className="font-extrabold text-xs text-emerald-900 leading-snug">
-                  Đường link chia sẻ nhập báo cáo trực tuyến
+              <div>
+                <p className="font-black text-xs sm:text-sm leading-snug">
+                  Hệ Thống Trực Tuyến Nhập Báo Cáo Nhanh
                 </p>
-                <p className="text-[11px] text-emerald-700 font-medium">
-                  Quý Thầy/Cô nhập trực tiếp số liệu tại đây — <strong>Hoàn toàn không cần đăng nhập tài khoản</strong>.
+                <p className="text-[11px] sm:text-xs opacity-90 font-medium">
+                  Quý Thầy/Cô chọn Lớp / Đối tượng của mình và điền số liệu — <strong>Hoàn toàn không cần đăng nhập</strong>.
                 </p>
               </div>
             </div>
-            <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 font-black text-[10px] shrink-0">
+            <span className="hidden md:inline-flex px-3 py-1 rounded-full bg-white/20 text-white font-black text-xs shrink-0">
               ✓ Tự do nhập
             </span>
           </div>
         )}
-
-        {/* Report Header Card */}
-        <div className="bg-white rounded-3xl border-2 border-teal-200 p-5 sm:p-7 shadow-lg shadow-teal-900/5 space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-teal-600/20">
-              <FileSpreadsheet className="w-6 h-6" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-[11px] font-black uppercase text-teal-700 tracking-wider">
-                BIỂU MẪU NHẬP LIỆU BÁO CÁO GẤP
-              </span>
-              <h1 className="text-lg sm:text-xl font-black text-slate-900 leading-snug mt-0.5">
-                {report.title}
-              </h1>
-            </div>
-          </div>
-
-          {report.description && (
-            <div className="p-3 bg-teal-50/70 border border-teal-100 rounded-2xl text-xs text-slate-700 font-normal leading-relaxed whitespace-pre-wrap">
-              {report.description}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
-            <div className="flex items-center gap-1.5">
-              <School className="w-3.5 h-3.5 text-teal-600" />
-              <span>Người tạo: <strong>{report.creatorName}</strong></span>
-            </div>
-            {report.deadline && (
-              <div className="flex items-center gap-1.5 text-rose-600 font-bold">
-                <Clock className="w-3.5 h-3.5" />
-                <span>Hạn nộp: {new Date(report.deadline).toLocaleString('vi-VN')}</span>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Closed notification */}
         {isClosed && (
@@ -494,486 +492,362 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
 
         {/* Success Alert */}
         {successMsg && (
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-start gap-3 animate-in fade-in">
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 flex items-start gap-3 animate-in fade-in shadow-2xs">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <h4 className="text-xs font-black text-emerald-900">Gửi số liệu thành công!</h4>
-              <p className="text-xs text-emerald-800 leading-relaxed">{successMsg}</p>
+              <h4 className="text-xs sm:text-sm font-black text-emerald-900">Gửi số liệu thành công!</h4>
+              <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed">{successMsg}</p>
             </div>
           </div>
         )}
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 flex items-center gap-3">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-300 text-rose-950 flex items-center gap-3 shadow-2xs">
             <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-            <p className="text-xs text-rose-800 font-bold">{errorMsg}</p>
+            <p className="text-xs sm:text-sm text-rose-800 font-bold">{errorMsg}</p>
           </div>
         )}
 
-        {/* Form Body */}
+        {/* Main Grid Layout: Desktop Full-width 2-column (5 cols + 7 cols) / Mobile 1 column */}
         {!isClosed && (
-          <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7 shadow-md space-y-5">
-            {/* Row Selector / Identifier */}
-            <div className="space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-              <label className="text-xs font-black text-slate-800 flex items-center justify-between">
-                <span>1. Chọn thông tin của Thầy/Cô ({idCol ? idCol.name : 'Dòng báo cáo'}): <span className="text-rose-500">*</span></span>
-                {report.allowNewRows && (
-                  <button
-                    type="button"
-                    onClick={handleStartNewRow}
-                    className="text-[11px] font-bold text-teal-700 hover:text-teal-900 underline cursor-pointer"
-                  >
-                    + Thêm đối tượng mới
-                  </button>
-                )}
-              </label>
-
-              {!isCreatingNew ? (
-                <div className="space-y-1.5">
-                  <select
-                    value={selectedRowId}
-                    onChange={(e) => handleSelectRow(e.target.value)}
-                    required
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer shadow-2xs"
-                  >
-                    {report.rows.map((row, idx) => {
-                      const displayTitle = idCol && row[idCol.id] ? String(row[idCol.id]) : `Dòng ${idx + 1}`;
-                      const extraInfo = report.columns[2] && row[report.columns[2].id] ? ` (${row[report.columns[2].id]})` : '';
-                      const statusIcon = row._isComplete ? '✅ ' : '⏳ ';
-                      return (
-                        <option key={row.id} value={row.id}>
-                          {statusIcon} {displayTitle} {extraInfo} {row._isComplete ? '- Đã điền' : '- Chưa đủ số liệu'}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <p className="text-[11px] text-slate-500">
-                    💡 Thầy/Cô chỉ cần chọn đúng tên Lớp / Tên của mình trong danh sách trên để xem và cập nhật số liệu.
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3 bg-teal-50/80 rounded-xl border border-teal-200 text-xs text-teal-900 font-bold flex items-center justify-between">
-                  <span>✨ Đang thêm một dòng số liệu mới vào danh sách</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (report.rows[0]) handleSelectRow(report.rows[0].id);
-                    }}
-                    className="text-teal-700 underline cursor-pointer hover:text-teal-900"
-                  >
-                    Hủy thêm mới
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Real-time Concurrent Duplicate Warning & Resolution */}
-            {duplicateMatchInfo && (
-              <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-2.5 text-xs animate-in fade-in">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="space-y-1 flex-1">
-                    <h4 className="font-black text-amber-950 flex items-center gap-1.5 flex-wrap">
-                      <span>Phát hiện dữ liệu đã có người nộp:</span>
-                      <span className="px-2 py-0.5 rounded-md bg-amber-200/90 text-amber-900 font-black text-[11px]">
-                        {duplicateMatchInfo.colName}: "{duplicateMatchInfo.value}"
-                      </span>
-                    </h4>
-                    <p className="text-amber-800 text-[11px] leading-relaxed">
-                      Đã có bản ghi trên hệ thống{duplicateMatchInfo.row._submittedBy ? ` do "${duplicateMatchInfo.row._submittedBy}" gửi` : ''}{duplicateMatchInfo.row._submittedAt ? ` lúc ${new Date(duplicateMatchInfo.row._submittedAt).toLocaleTimeString('vi-VN')}` : ''}. Để tránh làm mất hoặc ghi đè dữ liệu của người khác cùng nhập, vui lòng chọn:
-                    </p>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            
+            {/* LEFT COLUMN (lg:col-span-5): Report Header Info + Step 1 Object Selection */}
+            <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4">
+              
+              {/* Report Header Card */}
+              <div className="bg-white rounded-3xl border border-teal-200/90 p-5 sm:p-6 shadow-sm space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-teal-600/20">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] sm:text-[11px] font-black uppercase text-teal-700 tracking-wider">
+                      BIỂU MẪU BÁO CÁO GẤP
+                    </span>
+                    <h1 className="text-base sm:text-lg font-black text-slate-900 leading-snug mt-0.5">
+                      {report.title}
+                    </h1>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-amber-200/90">
-                  <label className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${duplicateResolution === 'create_new' ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
-                    <input
-                      type="radio"
-                      name="dup_res_shared"
-                      checked={duplicateResolution === 'create_new'}
-                      onChange={() => setDuplicateResolution('create_new')}
-                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <div className="text-[11px]">
-                      <span className="font-black text-emerald-900 block">✨ Lưu thành bản ghi riêng biệt</span>
-                      <span className="text-slate-500 text-[10px]">An toàn tuyệt đối - Giữ trọn dữ liệu cả hai người</span>
-                    </div>
-                  </label>
+                {report.description && (
+                  <p className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    {report.description}
+                  </p>
+                )}
 
-                  <label className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${duplicateResolution === 'overwrite' ? 'bg-amber-100/70 border-amber-400 ring-2 ring-amber-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
-                    <input
-                      type="radio"
-                      name="dup_res_shared"
-                      checked={duplicateResolution === 'overwrite'}
-                      onChange={() => setDuplicateResolution('overwrite')}
-                      className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                {/* Progress summary bar */}
+                <div className="p-3 bg-teal-50/70 rounded-2xl border border-teal-100 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-teal-900">
+                    <span>Tiến độ đã nộp:</span>
+                    <span className="px-2 py-0.5 rounded-full bg-teal-600 text-white text-[10px] font-black">
+                      {report.rows.filter((r) => r._isComplete).length} / {report.rows.length} đối tượng
+                    </span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-teal-200/80 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-teal-600 to-emerald-500 transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            (report.rows.filter((r) => r._isComplete).length / Math.max(1, report.rows.length)) * 100
+                          )
+                        )}%`
+                      }}
                     />
-                    <div className="text-[11px]">
-                      <span className="font-black text-amber-900 block">✏️ Cập nhật đè lên dòng này</span>
-                      <span className="text-slate-500 text-[10px]">Chỉ chọn khi Thầy/Cô muốn sửa lại số liệu cũ</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
+                  <div className="flex items-center gap-1.5">
+                    <School className="w-3.5 h-3.5 text-teal-600" />
+                    <span>Người tạo: <strong>{report.creatorName}</strong></span>
+                  </div>
+                  {report.deadline && (
+                    <div className="flex items-center gap-1.5 text-rose-600 font-bold">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Hạn: {new Date(report.deadline).toLocaleString('vi-VN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                  </label>
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* Submitter Name input (Optional) */}
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700">
-                Họ và tên người gửi / GV phụ trách:
-              </label>
-              <input
-                type="text"
-                value={submitterName}
-                onChange={(e) => setSubmitterName(e.target.value)}
-                placeholder="Ví dụ: Cô Nguyễn Thị Hoa..."
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal focus:outline-none focus:border-teal-500"
-              />
-            </div>
+              {/* Step 1 Card: Quick Object Selection Dropdown (STT / Lớp / Tên) */}
+              <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-1.5">
+                    <User className="w-4 h-4 text-teal-600" />
+                    <span>1. CHỌN ĐỐI TƯỢNG (LỚP / STT)</span>
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    Bắt buộc *
+                  </span>
+                </div>
 
-            {/* Dynamic Input Fields Generated from Excel Columns in EXACT natural order */}
-            <div className="space-y-4 pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase text-teal-900 tracking-wider">
-                  2. CÁC SỐ LIỆU CẦN ĐIỀN
-                </span>
-                <span className="text-[11px] font-bold text-slate-500">
-                  {inputColumns.length} trường số liệu
-                </span>
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-800">
+                      Chọn Lớp / STT của Thầy/Cô trong danh sách:
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={selectedRowId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'new_row') {
+                            handleStartNewRow();
+                          } else if (val) {
+                            handleSelectRow(val);
+                          }
+                        }}
+                        className="w-full px-3.5 py-2.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 focus:bg-white transition-all shadow-2xs appearance-none cursor-pointer"
+                      >
+                        <option value="">-- Bấm vào đây để chọn Lớp / Đối tượng --</option>
+                        {report.rows.map((r, idx) => {
+                          const title = idCol && r[idCol.id] ? String(r[idCol.id]) : `STT ${idx + 1}`;
+                          const isDone = r._isComplete;
+                          return (
+                            <option key={r.id} value={r.id}>
+                              {isDone ? '✅' : '⌛'} {title} {isDone ? '(Đã có số liệu)' : '(Chưa có số liệu)'}
+                            </option>
+                          );
+                        })}
+                        <option value="new_row">✨ + Thêm đối tượng mới ngoài danh sách</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      💡 Thầy/Cô chọn tên Lớp / STT để nạp dữ liệu cũ hoặc điền trực tiếp vào form bên phải.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-xs font-bold text-slate-800">
+                      Họ và tên người gửi / GV phụ trách (Tùy chọn):
+                    </label>
+                    <input
+                      type="text"
+                      value={submitterName}
+                      onChange={(e) => setSubmitterName(e.target.value)}
+                      placeholder="Nhập tên Giáo viên / Người nộp..."
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:border-teal-500 focus:bg-white shadow-2xs"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {(() => {
-                const blocks = getOrderedFormFieldBlocks(inputColumns);
+            </div>
 
-                const renderFormField = (col: ReportColumn, isGrouped = false) => {
-                  const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
-                  const isColName = isPersonNameOrTextColumn(col.subName || col.name);
-                  const isNumber = col.type === 'number' && !isColName;
-                  const isTextArea = !isNumber && (col.name.toLowerCase().includes('ghi chú') || col.name.toLowerCase().includes('khó khăn'));
-                  const isSttField = col.id === 'col_stt' || col.name.toLowerCase() === 'stt';
-
-                  return (
-                    <div
-                      key={col.id}
-                      className={`space-y-1.5 ${isTextArea ? 'sm:col-span-2' : ''}`}
-                    >
-                      <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 min-w-0">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 inline-block ${isGrouped ? 'bg-teal-600' : 'bg-slate-400'}`} />
-                          <span className="truncate">{col.subName || col.name}</span>
-                          {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
-                        </span>
-                        <span className="text-[10px] font-normal text-slate-400 shrink-0">
-                          {isSttField ? 'Tự tăng' : isNumber ? 'Số' : 'Chữ'}
-                        </span>
-                      </label>
-
-                      {col.description && (
-                        <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
-                      )}
-
-                      {isNumber ? (
-                        <input
-                          type="number"
-                          value={currentVal}
-                          onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
-                          required={col.required}
-                          placeholder={`Nhập ${col.subName || col.name}...`}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                        />
-                      ) : isTextArea ? (
-                        <textarea
-                          rows={2}
-                          value={currentVal}
-                          onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                          required={col.required}
-                          placeholder={`Nhập ${col.name}...`}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                        />
+            {/* RIGHT COLUMN (lg:col-span-7): Step 2 Form Inputs + Action Buttons */}
+            <div className="lg:col-span-7 space-y-4">
+              
+              <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7 shadow-sm space-y-5">
+                
+                {/* Auto-recognition badge */}
+                {autoRecognitionInfo && (
+                  <div className={`p-3.5 rounded-2xl border flex items-start gap-3 text-xs font-medium transition-all ${
+                    autoRecognitionInfo.isMatch
+                      ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 shadow-2xs'
+                      : 'bg-sky-50/90 border-sky-300 text-sky-950 shadow-2xs'
+                  }`}>
+                    {autoRecognitionInfo.isMatch ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <Sparkles className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      {autoRecognitionInfo.isMatch ? (
+                        <p className="font-extrabold text-emerald-900 leading-snug">
+                          🟢 Khớp đối tượng: "{autoRecognitionInfo.title}"
+                          {autoRecognitionInfo.isComplete && autoRecognitionInfo.submittedBy ? ` (Gần nhất: ${autoRecognitionInfo.submittedBy})` : ''}
+                        </p>
                       ) : (
-                        <input
-                          type="text"
-                          value={currentVal}
-                          onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                          required={col.required}
-                          placeholder={`Nhập ${col.subName || col.name}...`}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                        />
+                        <p className="font-extrabold text-sky-900 leading-snug">
+                          ✨ Nhận diện đối tượng mới: "{autoRecognitionInfo.title}"
+                        </p>
                       )}
+                      <p className="text-[11px] opacity-90 leading-relaxed">
+                        {autoRecognitionInfo.isMatch
+                          ? 'Số liệu sẽ tự động cập nhật chính xác vào dòng này, không lo bị trùng lặp hay mất bài.'
+                          : 'Số liệu sẽ được tự động thêm mới vào bảng tổng hợp của nhà trường.'}
+                      </p>
                     </div>
-                  );
-                };
+                  </div>
+                )}
 
-                return (
-                  <div className="space-y-4">
-                    {blocks.map((block, bIdx) => {
-                      if (block.type === 'standalone_group') {
-                        return (
-                          <div
-                            key={`standalone_blk_${bIdx}`}
-                            className="bg-slate-50/80 rounded-2xl border border-slate-200 p-4 space-y-3"
-                          >
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                              {block.columns.map((col) => renderFormField(col, false))}
-                            </div>
-                          </div>
-                        );
-                      }
+                {/* Form Inputs */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <span className="text-xs font-black uppercase text-teal-900 tracking-wider flex items-center gap-1.5">
+                      <ListOrdered className="w-4 h-4 text-teal-600" />
+                      <span>2. CÁC SỐ LIỆU CẦN ĐIỀN</span>
+                    </span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-800">
+                      {inputColumns.length} trường dữ liệu
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const blocks = getOrderedFormFieldBlocks(inputColumns);
+
+                    const renderFormField = (col: ReportColumn, isGrouped = false) => {
+                      const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
+                      const isColName = isPersonNameOrTextColumn(col.subName || col.name);
+                      const isNumber = col.type === 'number' && !isColName;
+                      const isTextArea = !isNumber && (col.name.toLowerCase().includes('ghi chú') || col.name.toLowerCase().includes('khó khăn'));
+                      const isSttField = col.id === 'col_stt' || col.name.toLowerCase() === 'stt';
 
                       return (
                         <div
-                          key={`merged_blk_${block.groupName}_${bIdx}`}
-                          className="bg-teal-50/40 rounded-2xl border-2 border-teal-200/90 overflow-hidden shadow-2xs"
+                          key={col.id}
+                          className={`space-y-1.5 ${isTextArea ? 'sm:col-span-2' : ''}`}
                         >
-                          <div className="px-4 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-black text-xs sm:text-sm flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                              <span>🏷️ {block.groupName}</span>
+                          <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 inline-block ${isGrouped ? 'bg-teal-600' : 'bg-slate-400'}`} />
+                              <span className="truncate">{col.subName || col.name}</span>
+                              {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
                             </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
-                              {block.columns.length} cột số liệu
+                            <span className="text-[10px] font-normal text-slate-400 shrink-0">
+                              {isSttField ? 'Tự tăng' : isNumber ? 'Số' : 'Chữ'}
                             </span>
-                          </div>
-                          <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-white">
-                            {block.columns.map((col) => renderFormField(col, true))}
-                          </div>
+                          </label>
+
+                          {col.description && (
+                            <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
+                          )}
+
+                          {isNumber ? (
+                            <input
+                              type="number"
+                              value={currentVal}
+                              onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
+                              required={col.required}
+                              placeholder={`Nhập ${col.subName || col.name}...`}
+                              className="w-full px-3 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                            />
+                          ) : isTextArea ? (
+                            <textarea
+                              rows={2}
+                              value={currentVal}
+                              onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                              required={col.required}
+                              placeholder={`Nhập ${col.name}...`}
+                              className="w-full px-3 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={currentVal}
+                              onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                              required={col.required}
+                              placeholder={`Nhập ${col.subName || col.name}...`}
+                              className="w-full px-3 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                            />
+                          )}
                         </div>
                       );
-                    })}
+                    };
+
+                    return (
+                      <div className="space-y-4">
+                        {blocks.map((block, bIdx) => {
+                          if (block.type === 'standalone_group') {
+                            return (
+                              <div
+                                key={`standalone_blk_${bIdx}`}
+                                className="bg-slate-50/80 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3"
+                              >
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                  {block.columns.map((col) => renderFormField(col, false))}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div
+                              key={`merged_blk_${block.groupName}_${bIdx}`}
+                              className="bg-teal-50/40 rounded-2xl border-2 border-teal-200/90 overflow-hidden shadow-2xs"
+                            >
+                              <div className="px-4 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-black text-xs sm:text-sm flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                  <span>🏷️ {block.groupName}</span>
+                                </span>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
+                                  {block.columns.length} cột số liệu
+                                </span>
+                              </div>
+                              <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-white">
+                                {block.columns.map((col) => renderFormField(col, true))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Submit buttons */}
+                <div className="pt-2 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Nút 1: Lưu & Thêm Mới */}
+                    <button
+                      type="button"
+                      onClick={() => handleSubmit(undefined, true)}
+                      disabled={submitting}
+                      className="py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-sm shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
+                      title="Lưu số liệu đối tượng này và giữ form để nhập tiếp đối tượng tiếp theo"
+                    >
+                      {submitting && submittingAction === 'save_new' ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Đang lưu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <PlusCircle className="w-4 h-4" />
+                          <span>Lưu & Thêm Mới</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Nút 2: Gửi & Hoàn Thành */}
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="py-3 px-4 rounded-2xl bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-xs sm:text-sm shadow-md shadow-teal-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
+                    >
+                      {submitting && submittingAction !== 'save_new' ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Đang gửi...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Gửi & Hoàn Thành</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                );
-              })()}
-            </div>
 
-            {/* Submit buttons */}
-            <div className="pt-3 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Nút 1: Lưu & Thêm Mới */}
-                <button
-                  type="button"
-                  onClick={() => handleSubmit(undefined, true)}
-                  disabled={submitting}
-                  className="py-3.5 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-sm shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
-                  title="Lưu số liệu đối tượng này và giữ form để nhập tiếp đối tượng tiếp theo"
-                >
-                  {submitting && submittingAction === 'save_new' ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Đang lưu...</span>
-                    </>
-                  ) : (
-                    <>
-                      <PlusCircle className="w-4 h-4" />
-                      <span>Lưu & Thêm Mới</span>
-                    </>
-                  )}
-                </button>
+                  <p className="text-center text-[11px] text-slate-400 font-medium">
+                    🔒 Số liệu tự động đồng bộ ngay vào file Excel tổng hợp của trường.
+                  </p>
+                </div>
 
-                {/* Nút 2: Gửi & Hoàn Thành */}
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="py-3.5 px-5 rounded-2xl bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-xs sm:text-sm shadow-md shadow-teal-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
-                >
-                  {submitting && submittingAction !== 'save_new' ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Đang gửi...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4" />
-                      <span>Gửi & Hoàn Thành</span>
-                    </>
-                  )}
-                </button>
               </div>
 
-              <p className="text-center text-[11px] text-slate-400 font-medium">
-                🔒 Số liệu sau khi gửi sẽ tự động đồng bộ ngay vào file Excel tổng hợp của trường.
-              </p>
             </div>
+
           </form>
         )}
 
-        {/* ============================================================== */}
-        {/* DANH SÁCH HIỂN THỊ DỮ LIỆU ĐƯỢC SẮP XẾP GỌN GÀNG, CHUẨN XÁC     */}
-        {/* ============================================================== */}
-        <div className="bg-white rounded-3xl border border-teal-200/90 p-5 sm:p-6 shadow-md space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <ListOrdered className="w-4 h-4 text-teal-600" />
-                <span>Danh Sách & Tiến Độ Gửi Số Liệu</span>
-                <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[11px] font-black">
-                  {report.rows.filter((r) => r._isComplete).length} / {report.rows.length} đối tượng đã nộp
-                </span>
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Danh sách được hệ thống tự động sắp xếp gọn gàng theo thứ tự chuẩn. Nhấn vào dòng để nạp nhanh lên form.
-              </p>
-            </div>
-
-            {/* Quick search */}
-            <div className="relative min-w-[180px] max-w-xs w-full sm:w-auto">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={listSearchTerm}
-                onChange={(e) => setListSearchTerm(e.target.value)}
-                placeholder="Tìm lớp, tên đối tượng..."
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal focus:outline-none focus:border-teal-500"
-              />
-            </div>
-          </div>
-
-          {/* Filter Pills */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setListStatusFilter('all')}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                listStatusFilter === 'all'
-                  ? 'bg-teal-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Tất cả ({report.rows.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setListStatusFilter('completed')}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                listStatusFilter === 'completed'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Đã nộp ({report.rows.filter((r) => r._isComplete).length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setListStatusFilter('pending')}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                listStatusFilter === 'pending'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Chưa nộp ({report.rows.filter((r) => !r._isComplete).length})
-            </button>
-          </div>
-
-          {/* Table of Rows */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-700 font-black">
-                <tr>
-                  <th className="py-2.5 px-3 w-12 text-center border-r border-slate-200">#</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200">{idCol?.name || 'Tên / Lớp'}</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200">Người nộp / Thời gian</th>
-                  <th className="py-2.5 px-3 text-center border-r border-slate-200">Trạng thái</th>
-                  <th className="py-2.5 px-3 text-center w-24">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {(() => {
-                  const filtered = report.rows.filter((row) => {
-                    if (listStatusFilter === 'completed' && !row._isComplete) return false;
-                    if (listStatusFilter === 'pending' && row._isComplete) return false;
-                    if (listSearchTerm.trim()) {
-                      const term = listSearchTerm.toLowerCase();
-                      const val = idCol && row[idCol.id] ? String(row[idCol.id]).toLowerCase() : '';
-                      const by = row._submittedBy ? String(row._submittedBy).toLowerCase() : '';
-                      if (!val.includes(term) && !by.includes(term)) return false;
-                    }
-                    return true;
-                  });
-
-                  if (filtered.length === 0) {
-                    return (
-                      <tr>
-                        <td colSpan={5} className="py-6 text-center text-slate-400">
-                          Không tìm thấy dòng nào phù hợp.
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  return filtered.map((row, idx) => {
-                    const title = idCol && row[idCol.id] ? String(row[idCol.id]) : `Dòng ${idx + 1}`;
-                    const isSelected = selectedRowId === row.id && !isCreatingNew;
-                    const isComplete = row._isComplete;
-
-                    return (
-                      <tr
-                        key={row.id}
-                        className={`transition-colors hover:bg-teal-50/40 cursor-pointer ${
-                          isSelected ? 'bg-teal-50 font-bold' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
-                        }`}
-                        onClick={() => handleSelectRow(row.id)}
-                      >
-                        <td className="py-2 px-3 text-center text-slate-500 font-bold border-r border-slate-100">
-                          {idx + 1}
-                        </td>
-                        <td className="py-2 px-3 text-slate-900 font-bold border-r border-slate-100">
-                          <div className="flex items-center gap-1.5">
-                            <span>{title}</span>
-                            {isSelected && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-teal-600 text-white font-extrabold">
-                                Đang chọn
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2 px-3 text-slate-600 border-r border-slate-100">
-                          {row._submittedBy ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-teal-800">👤 {row._submittedBy}</span>
-                              {row._submittedAt && (
-                                <span className="text-[10px] text-slate-400">
-                                  • {new Date(row._submittedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 italic text-[11px]">— Chưa cập nhật —</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-3 text-center border-r border-slate-100">
-                          {isComplete ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              <span>Đã hoàn thành</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
-                              <Clock className="w-3 h-3 text-amber-600" />
-                              <span>Chưa nộp</span>
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectRow(row.id);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 font-extrabold text-[11px] transition-all cursor-pointer"
-                          >
-                            {isSelected ? 'Đang điền' : 'Điền số liệu'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  });
-                })()}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
 
       <footer className="text-center text-[11px] text-slate-400 py-4 mt-6">
