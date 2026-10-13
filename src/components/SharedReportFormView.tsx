@@ -237,6 +237,15 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
       }
     }
 
+    // Validate identifier field (Lớp / Đối tượng báo cáo)
+    if (idCol) {
+      const idVal = formData[idCol.id];
+      if (idVal === undefined || idVal === null || String(idVal).trim() === '') {
+        alert(`Vui lòng nhập tên Lớp / Đối tượng báo cáo ở Mục 2 (ví dụ: Lớp 1A, Lớp 2B...).`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     setSubmittingAction(keepOpen ? 'save_new' : 'save_close');
     setSuccessMsg('');
@@ -319,15 +328,31 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
 
   const inputColumns = useMemo(() => {
     if (!report || !report.columns) return [];
-    const base = report.columns.filter((c) => c.isInputField);
-    if (isCreatingNew && idCol && !base.some((c) => c.id === idCol.id)) {
-      const colIndex = report.columns.findIndex((c) => c.id === idCol.id);
-      const list = [...base];
-      list.splice(colIndex >= 0 ? colIndex : 0, 0, idCol);
-      return list;
+    
+    const baseMap = new Map<string, ReportColumn>();
+    
+    // Always include the main identifier column first if found
+    if (idCol) {
+      baseMap.set(idCol.id, idCol);
     }
-    return base;
-  }, [report, isCreatingNew, idCol]);
+    
+    // Include all input fields and identifier fields
+    report.columns.forEach((c) => {
+      if (c.isInputField || c.isIdentifier || c.id === report.identifierColumnId) {
+        baseMap.set(c.id, c);
+      }
+    });
+
+    const list = Array.from(baseMap.values());
+
+    // Sort according to report.columns definition order
+    const colOrderMap = new Map<string, number>(report.columns.map((c, idx) => [c.id, idx]));
+    return list.sort((a, b) => {
+      const idxA = colOrderMap.get(a.id) ?? 0;
+      const idxB = colOrderMap.get(b.id) ?? 0;
+      return idxA - idxB;
+    });
+  }, [report, idCol]);
 
   // Real-time automatic recognition of submitted row based on identifier column (Lớp / Họ tên)
   const autoRecognitionInfo = useMemo(() => {
@@ -580,17 +605,17 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-1.5">
                     <User className="w-4 h-4 text-teal-600" />
-                    <span>1. CHỌN ĐỐI TƯỢNG (LỚP / STT)</span>
+                    <span>1. CHỌN NHANH LỚP / ĐỐI TƯỢNG (TÙY CHỌN)</span>
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                    Bắt buộc *
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                    Tùy chọn
                   </span>
                 </div>
 
                 <div className="space-y-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-800">
-                      Chọn Lớp / STT của Thầy/Cô trong danh sách:
+                      Chọn Lớp / STT để nạp nhanh số liệu (nếu cần):
                     </label>
                     <div className="relative">
                       <select
@@ -601,11 +626,13 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                             handleStartNewRow();
                           } else if (val) {
                             handleSelectRow(val);
+                          } else {
+                            setSelectedRowId('');
                           }
                         }}
                         className="w-full px-3.5 py-2.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 focus:bg-white transition-all shadow-2xs appearance-none cursor-pointer"
                       >
-                        <option value="">-- Bấm vào đây để chọn Lớp / Đối tượng --</option>
+                        <option value="">-- Bấm vào đây để chọn Lớp từ danh sách (hoặc gõ tự do ở Mục 2) --</option>
                         {report.rows.map((r, idx) => {
                           const title = idCol && r[idCol.id] ? String(r[idCol.id]) : `STT ${idx + 1}`;
                           const isDone = r._isComplete;
@@ -620,7 +647,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                       <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      💡 Thầy/Cô chọn tên Lớp / STT để nạp dữ liệu cũ hoặc điền trực tiếp vào form bên phải.
+                      💡 Thầy/Cô có thể chọn Lớp tại đây để nạp nhanh dữ liệu, hoặc gõ trực tiếp tên Lớp/Đối tượng ở Mục 2 bên phải.
                     </p>
                   </div>
 
@@ -699,20 +726,21 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                       const isNumber = col.type === 'number' && !isColName;
                       const isTextArea = !isNumber && (col.name.toLowerCase().includes('ghi chú') || col.name.toLowerCase().includes('khó khăn'));
                       const isSttField = col.id === 'col_stt' || col.name.toLowerCase() === 'stt';
+                      const isIdField = idCol && col.id === idCol.id;
 
                       return (
                         <div
                           key={col.id}
-                          className={`space-y-1.5 ${isTextArea ? 'sm:col-span-2' : ''}`}
+                          className={`space-y-1.5 ${isTextArea || isIdField ? 'sm:col-span-2' : ''}`}
                         >
                           <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
                             <span className="flex items-center gap-1.5 min-w-0">
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 inline-block ${isGrouped ? 'bg-teal-600' : 'bg-slate-400'}`} />
-                              <span className="truncate">{col.subName || col.name}</span>
-                              {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
+                              <span className={`w-2 h-2 rounded-full shrink-0 inline-block ${isIdField ? 'bg-teal-600 animate-pulse' : isGrouped ? 'bg-teal-600' : 'bg-slate-400'}`} />
+                              <span className="truncate">{col.subName || col.name} {isIdField ? '(Lớp / Đối tượng báo cáo)' : ''}</span>
+                              {(col.required || isIdField) && <span className="text-rose-500 font-black shrink-0">*</span>}
                             </span>
-                            <span className="text-[10px] font-normal text-slate-400 shrink-0">
-                              {isSttField ? 'Tự tăng' : isNumber ? 'Số' : 'Chữ'}
+                            <span className={`text-[10px] font-bold shrink-0 ${isIdField ? 'text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200' : 'text-slate-400'}`}>
+                              {isIdField ? 'Nhập tự do / Nhận diện tự động' : isSttField ? 'Tự tăng' : isNumber ? 'Số' : 'Chữ'}
                             </span>
                           </label>
 
@@ -720,7 +748,21 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                             <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
                           )}
 
-                          {isNumber ? (
+                          {isIdField ? (
+                            <div className="space-y-1">
+                              <input
+                                type="text"
+                                value={currentVal}
+                                onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                                required
+                                placeholder={`Nhập tên Lớp / Đối tượng (ví dụ: Lớp 1A, Lớp 2B, Nguyễn Văn A)...`}
+                                className="w-full px-3.5 py-2.5 bg-teal-50/70 border-2 border-teal-400/80 rounded-xl text-xs sm:text-sm font-black text-teal-950 focus:outline-none focus:border-teal-600 focus:bg-white shadow-2xs transition-all placeholder:text-slate-400"
+                              />
+                              <p className="text-[10px] text-teal-700 font-medium flex items-center gap-1">
+                                💡 Thầy/Cô gõ tự do tên Lớp/Đối tượng tại đây — hệ thống tự động nhận diện và cập nhật đúng số liệu.
+                              </p>
+                            </div>
+                          ) : isNumber ? (
                             <input
                               type="number"
                               value={currentVal}
