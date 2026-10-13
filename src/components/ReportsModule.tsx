@@ -747,7 +747,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     if (!currentReport) return;
     const msg = `📢 [BÁO CÁO GẤP] ${currentReport.title}\n` +
       (currentReport.deadline ? `⏰ Hạn chót: ${new Date(currentReport.deadline).toLocaleString('vi-VN')}\n` : '') +
-      `Kính gửi quý Thầy/Cô bấm vào đường link sau để nhập số liệu:\n${shareUrl}\n(Biểu mẫu tự động đồng bộ vào file Excel của trường)`;
+      `Kính gửi quý Thầy/Cô bấm vào đường link sau để nhập số liệu trực tiếp (KHÔNG CẦN ĐĂNG NHẬP TÀI KHOẢN):\n${shareUrl}\n(Biểu mẫu tự động đồng bộ vào bảng Excel tổng hợp của trường)`;
 
     navigator.clipboard.writeText(msg);
     setCopiedMessage(true);
@@ -1532,22 +1532,36 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                                         className="w-full px-2 py-0.5 border border-teal-500 rounded bg-white text-xs font-bold"
                                       />
                                     ) : (
-                                      <span
-                                        className={`cursor-pointer ${
-                                          isEmpty
-                                            ? 'text-amber-500/80 font-normal italic text-[11px]'
-                                            : col.type === 'number' && typeof val === 'number'
-                                            ? 'font-bold text-slate-800'
-                                            : 'text-slate-800'
-                                        }`}
-                                        title="Nháy đúp chuột để sửa nhanh ô này"
-                                      >
-                                        {isEmpty
-                                          ? col.isInputField ? '— chưa điền —' : ''
-                                          : col.type === 'number' && typeof val === 'number' && val > 999
-                                          ? val.toLocaleString('vi-VN')
-                                          : String(val)}
-                                      </span>
+                                      <div className="flex flex-col">
+                                        <span
+                                          className={`cursor-pointer ${
+                                            isEmpty
+                                              ? 'text-amber-500/80 font-normal italic text-[11px]'
+                                              : col.type === 'number' && typeof val === 'number'
+                                              ? 'font-bold text-slate-800'
+                                              : 'text-slate-800'
+                                          }`}
+                                          title="Nháy đúp chuột để sửa nhanh ô này"
+                                        >
+                                          {isEmpty
+                                            ? col.isInputField ? '— chưa điền —' : ''
+                                            : col.type === 'number' && typeof val === 'number' && val > 999
+                                            ? val.toLocaleString('vi-VN')
+                                            : String(val)}
+                                        </span>
+                                        {(col.id === currentReport.identifierColumnId || col.isIdentifier) && row._submittedBy && (
+                                          <div className="flex items-center gap-1 mt-0.5 text-[10px] text-teal-800 font-medium">
+                                            <span className="px-1.5 py-0.2 rounded-md bg-teal-100/90 text-teal-900 font-bold text-[9px]">
+                                              👤 {row._submittedBy}
+                                            </span>
+                                            {row._submittedAt && (
+                                              <span className="text-slate-400 text-[9px]">
+                                                • {new Date(row._submittedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
                                     )}
                                   </td>
                                 );
@@ -2065,9 +2079,16 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                   className="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs"
                 >
                   {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedLink ? 'Đã chép' : 'Sao chép'}</span>
                 </button>
               </div>
+            </div>
+
+            {/* Note badge */}
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-left flex items-center gap-2 text-emerald-950 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+              <span className="font-semibold text-[11px] leading-snug">
+                Người nhận bấm vào liên kết hoặc quét mã QR để nhập số liệu ngay, <strong>hoàn toàn không cần đăng nhập tài khoản</strong>.
+              </span>
             </div>
 
             {/* Pre-written Zalo Message */}

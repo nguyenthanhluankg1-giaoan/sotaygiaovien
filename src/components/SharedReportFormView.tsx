@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileSpreadsheet,
   CheckCircle2,
@@ -13,18 +13,55 @@ import {
   School,
   Share2,
   PlusCircle,
-  AlertTriangle
+  AlertTriangle,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  User,
+  ListOrdered
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { UrgentReportItem, ReportRow, ReportColumn, UserAccount } from '../types';
 import { fetchUrgentReportFromFirestore, submitReportRowToFirestore } from '../services/dbService';
-import { isPersonNameOrTextColumn } from '../utils/excelReportHelper';
+import { isPersonNameOrTextColumn, getOrderedFormFieldBlocks } from '../utils/excelReportHelper';
 
 interface SharedReportFormViewProps {
   reportId: string;
   currentUser?: UserAccount | null;
   onBackToApp?: () => void;
 }
+
+const sortRowsNaturally = (rows: ReportRow[], columns: ReportColumn[], identifierColId?: string): ReportRow[] => {
+  const sttCol = columns.find(
+    (c) => c.id === 'col_stt' || c.name.toLowerCase() === 'stt' || c.name.toLowerCase().includes('số tt')
+  );
+  const idCol = columns.find((c) => c.id === identifierColId || c.isIdentifier) || columns[1] || columns[0];
+
+  return [...rows].sort((a, b) => {
+    // 1. If STT column exists and has numeric values
+    if (sttCol) {
+      const valA = a[sttCol.id];
+      const valB = b[sttCol.id];
+      const numA = Number(valA);
+      const numB = Number(valB);
+      if (!isNaN(numA) && !isNaN(numB) && String(valA).trim() !== '' && String(valB).trim() !== '') {
+        return numA - numB;
+      }
+    }
+    // 2. Natural Vietnamese collation by identifier (e.g. Lớp 1/1, 1/2... 5/2)
+    if (idCol) {
+      const strA = a[idCol.id] !== undefined && a[idCol.id] !== null ? String(a[idCol.id]).trim() : '';
+      const strB = b[idCol.id] !== undefined && b[idCol.id] !== null ? String(b[idCol.id]).trim() : '';
+      if (strA && strB) {
+        return strA.localeCompare(strB, 'vi', { numeric: true, sensitivity: 'base' });
+      }
+      if (strA) return -1;
+      if (strB) return 1;
+    }
+    return 0;
+  });
+};
 
 export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   reportId,
@@ -49,6 +86,8 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     value: string;
   } | null>(null);
   const [duplicateResolution, setDuplicateResolution] = useState<'create_new' | 'overwrite'>('create_new');
+  const [listSearchTerm, setListSearchTerm] = useState<string>('');
+  const [listStatusFilter, setListStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
 
   useEffect(() => {
     let active = true;
@@ -67,13 +106,18 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                 type: isNameOrText ? ('text' as const) : c.type
               };
             });
-            const sanitizedData = { ...data, columns: sanitizedColumns };
+            const sortedRows = sortRowsNaturally(data.rows || [], sanitizedColumns, data.identifierColumnId);
+            const sanitizedData = { ...data, columns: sanitizedColumns, rows: sortedRows };
             setReport(sanitizedData);
             // Default select the first row if available
-            if (data.rows && data.rows.length > 0) {
-              const firstRow = data.rows[0];
+            if (sortedRows.length > 0) {
+              const firstRow = sortedRows[0];
               setSelectedRowId(firstRow.id);
               setFormData({ ...firstRow });
+              const idCol = sanitizedColumns.find((c) => c.id === data.identifierColumnId || c.isIdentifier);
+              if (idCol && firstRow[idCol.id]) {
+                setSubmitterName(String(firstRow[idCol.id]));
+              }
             }
           } else {
             setErrorMsg('Không tìm thấy thông tin mẫu báo cáo trên hệ thống.');
@@ -216,7 +260,12 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
       );
 
       if (result.success && result.report) {
-        setReport(result.report);
+        const sortedUpdatedRows = sortRowsNaturally(
+          result.report.rows,
+          result.report.columns,
+          result.report.identifierColumnId
+        );
+        setReport({ ...result.report, rows: sortedUpdatedRows });
 
         const idCol = report.columns.find((c) => c.id === report.identifierColumnId || c.isIdentifier) || report.columns[1] || report.columns[0];
         const rowTitle = idCol && rowToSubmit[idCol.id] ? String(rowToSubmit[idCol.id]) : 'số liệu';
@@ -285,7 +334,18 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   if (!report) return null;
 
   const idCol = report.columns.find((c) => c.id === report.identifierColumnId || c.isIdentifier) || report.columns[1] || report.columns[0];
-  const inputColumns = report.columns.filter((c) => c.isInputField);
+  const inputColumns = useMemo(() => {
+    if (!report) return [];
+    const base = report.columns.filter((c) => c.isInputField);
+    // If creating a new row, ensure idCol is editable in the form so user can enter name/class
+    if (isCreatingNew && idCol && !base.some((c) => c.id === idCol.id)) {
+      const colIndex = report.columns.findIndex((c) => c.id === idCol.id);
+      const list = [...base];
+      list.splice(colIndex >= 0 ? colIndex : 0, 0, idCol);
+      return list;
+    }
+    return base;
+  }, [report, isCreatingNew, idCol]);
   const isClosed = report.status === 'closed';
 
   return (
@@ -299,7 +359,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               className="px-3 py-1.5 rounded-xl bg-white/90 hover:bg-white text-teal-800 border border-teal-200 font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Về bảng điều khiển</span>
+              <span>{currentUser ? 'Về bảng điều khiển' : 'Đăng nhập tài khoản'}</span>
             </button>
           ) : (
             <div className="flex items-center gap-2">
@@ -333,6 +393,28 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
             )}
           </div>
         </div>
+
+        {/* Banner: Public direct input without requiring login */}
+        {!currentUser && (
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300 rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 text-emerald-950 shadow-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="font-extrabold text-xs text-emerald-900 leading-snug">
+                  Đường link chia sẻ nhập báo cáo trực tuyến
+                </p>
+                <p className="text-[11px] text-emerald-700 font-medium">
+                  Quý Thầy/Cô nhập trực tiếp số liệu tại đây — <strong>Hoàn toàn không cần đăng nhập tài khoản</strong>.
+                </p>
+              </div>
+            </div>
+            <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 font-black text-[10px] shrink-0">
+              ✓ Tự do nhập
+            </span>
+          </div>
+        )}
 
         {/* Report Header Card */}
         <div className="bg-white rounded-3xl border-2 border-teal-200 p-5 sm:p-7 shadow-lg shadow-teal-900/5 space-y-3">
@@ -520,7 +602,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               />
             </div>
 
-            {/* Dynamic Input Fields Generated from Excel Columns (Merged & Unmerged) */}
+            {/* Dynamic Input Fields Generated from Excel Columns in EXACT natural order */}
             <div className="space-y-4 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-teal-900 tracking-wider">
@@ -532,144 +614,102 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               </div>
 
               {(() => {
-                const groupsMap: Record<string, ReportColumn[]> = {};
-                const standalone: ReportColumn[] = [];
+                const blocks = getOrderedFormFieldBlocks(inputColumns);
 
-                inputColumns.forEach((col) => {
-                  if (col.groupName) {
-                    if (!groupsMap[col.groupName]) groupsMap[col.groupName] = [];
-                    groupsMap[col.groupName].push(col);
-                  } else {
-                    standalone.push(col);
-                  }
-                });
+                const renderFormField = (col: ReportColumn, isGrouped = false) => {
+                  const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
+                  const isColName = isPersonNameOrTextColumn(col.subName || col.name);
+                  const isNumber = col.type === 'number' && !isColName;
+                  const isTextArea = !isNumber && (col.name.toLowerCase().includes('ghi chú') || col.name.toLowerCase().includes('khó khăn'));
+                  const isSttField = col.id === 'col_stt' || col.name.toLowerCase() === 'stt';
+
+                  return (
+                    <div
+                      key={col.id}
+                      className={`space-y-1.5 ${isTextArea ? 'sm:col-span-2' : ''}`}
+                    >
+                      <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 inline-block ${isGrouped ? 'bg-teal-600' : 'bg-slate-400'}`} />
+                          <span className="truncate">{col.subName || col.name}</span>
+                          {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
+                        </span>
+                        <span className="text-[10px] font-normal text-slate-400 shrink-0">
+                          {isSttField ? 'Tự tăng' : isNumber ? 'Số' : 'Chữ'}
+                        </span>
+                      </label>
+
+                      {col.description && (
+                        <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
+                      )}
+
+                      {isNumber ? (
+                        <input
+                          type="number"
+                          value={currentVal}
+                          onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
+                          required={col.required}
+                          placeholder={`Nhập ${col.subName || col.name}...`}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                        />
+                      ) : isTextArea ? (
+                        <textarea
+                          rows={2}
+                          value={currentVal}
+                          onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                          required={col.required}
+                          placeholder={`Nhập ${col.name}...`}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={currentVal}
+                          onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                          required={col.required}
+                          placeholder={`Nhập ${col.subName || col.name}...`}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                        />
+                      )}
+                    </div>
+                  );
+                };
 
                 return (
                   <div className="space-y-4">
-                    {/* 1. Merged Groups Cards */}
-                    {Object.entries(groupsMap).map(([groupTitle, cols]) => (
-                      <div key={groupTitle} className="bg-teal-50/50 rounded-2xl border-2 border-teal-200/90 overflow-hidden shadow-2xs">
-                        <div className="px-4 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-black text-xs sm:text-sm flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <span>🏷️ {groupTitle}</span>
-                          </span>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
-                            {cols.length} cột số liệu
-                          </span>
+                    {blocks.map((block, bIdx) => {
+                      if (block.type === 'standalone_group') {
+                        return (
+                          <div
+                            key={`standalone_blk_${bIdx}`}
+                            className="bg-slate-50/80 rounded-2xl border border-slate-200 p-4 space-y-3"
+                          >
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                              {block.columns.map((col) => renderFormField(col, false))}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={`merged_blk_${block.groupName}_${bIdx}`}
+                          className="bg-teal-50/40 rounded-2xl border-2 border-teal-200/90 overflow-hidden shadow-2xs"
+                        >
+                          <div className="px-4 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-black text-xs sm:text-sm flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <span>🏷️ {block.groupName}</span>
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
+                              {block.columns.length} cột số liệu
+                            </span>
+                          </div>
+                          <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-white">
+                            {block.columns.map((col) => renderFormField(col, true))}
+                          </div>
                         </div>
-                        <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
-                          {cols.map((col) => {
-                            const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
-                            const isColName = isPersonNameOrTextColumn(col.subName || col.name);
-                            const isNumber = col.type === 'number' && !isColName;
-
-                            return (
-                              <div key={col.id} className="space-y-1 bg-slate-50/70 p-3 rounded-xl border border-slate-200/90">
-                                <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                                  <span className="flex items-center gap-1.5 min-w-0">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0 inline-block" />
-                                    <span className="truncate">{col.subName || col.name}</span>
-                                    {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
-                                  </span>
-                                  <span className="text-[10px] font-normal text-slate-400 shrink-0">
-                                    {isNumber ? 'Số' : 'Chữ'}
-                                  </span>
-                                </label>
-
-                                {col.description && (
-                                  <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
-                                )}
-
-                                {isNumber ? (
-                                  <input
-                                    type="number"
-                                    value={currentVal}
-                                    onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
-                                    required={col.required}
-                                    placeholder={`Nhập ${col.subName || col.name}...`}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                                  />
-                                ) : (
-                                  <input
-                                    type="text"
-                                    value={currentVal}
-                                    onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                                    required={col.required}
-                                    placeholder={`Nhập ${col.subName || col.name}...`}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* 2. Standalone / Unmerged Columns */}
-                    {standalone.length > 0 && (
-                      <div className="bg-slate-50/70 rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-                        <div className="px-4 py-2 bg-slate-200/90 text-slate-800 font-black text-xs flex items-center justify-between">
-                          <span>📋 CỘT ĐỘC LẬP / THÔNG TIN KHÁC</span>
-                          <span className="text-[10px] text-slate-500 font-bold">{standalone.length} trường</span>
-                        </div>
-                        <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
-                          {standalone.map((col) => {
-                            const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
-                            const isColName = isPersonNameOrTextColumn(col.name);
-                            const isNumber = col.type === 'number' && !isColName;
-
-                            return (
-                              <div key={col.id} className="space-y-1 bg-slate-50/70 p-3 rounded-xl border border-slate-200/90">
-                                <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                                  <span className="flex items-center gap-1.5 min-w-0">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-600 shrink-0 inline-block" />
-                                    <span className="truncate">{col.name}</span>
-                                    {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
-                                  </span>
-                                  <span className="text-[10px] font-normal text-slate-400 shrink-0">
-                                    {isNumber ? 'Số' : 'Chữ'}
-                                  </span>
-                                </label>
-
-                                {col.description && (
-                                  <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
-                                )}
-
-                                {isNumber ? (
-                                  <input
-                                    type="number"
-                                    value={currentVal}
-                                    onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
-                                    required={col.required}
-                                    placeholder={`Nhập ${col.name}...`}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                                  />
-                                ) : col.name.toLowerCase().includes('ghi chú') || col.name.toLowerCase().includes('khó khăn') ? (
-                                  <textarea
-                                    rows={2}
-                                    value={currentVal}
-                                    onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                                    required={col.required}
-                                    placeholder={`Ghi chú thêm...`}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                                  />
-                                ) : (
-                                  <input
-                                    type="text"
-                                    value={currentVal}
-                                    onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                                    required={col.required}
-                                    placeholder={`Nhập ${col.name}...`}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
                 );
               })()}
@@ -725,6 +765,185 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
             </div>
           </form>
         )}
+
+        {/* ============================================================== */}
+        {/* DANH SÁCH HIỂN THỊ DỮ LIỆU ĐƯỢC SẮP XẾP GỌN GÀNG, CHUẨN XÁC     */}
+        {/* ============================================================== */}
+        <div className="bg-white rounded-3xl border border-teal-200/90 p-5 sm:p-6 shadow-md space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <ListOrdered className="w-4 h-4 text-teal-600" />
+                <span>Danh Sách & Tiến Độ Gửi Số Liệu</span>
+                <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[11px] font-black">
+                  {report.rows.filter((r) => r._isComplete).length} / {report.rows.length} đối tượng đã nộp
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Danh sách được hệ thống tự động sắp xếp gọn gàng theo thứ tự chuẩn. Nhấn vào dòng để nạp nhanh lên form.
+              </p>
+            </div>
+
+            {/* Quick search */}
+            <div className="relative min-w-[180px] max-w-xs w-full sm:w-auto">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={listSearchTerm}
+                onChange={(e) => setListSearchTerm(e.target.value)}
+                placeholder="Tìm lớp, tên đối tượng..."
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal focus:outline-none focus:border-teal-500"
+              />
+            </div>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setListStatusFilter('all')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                listStatusFilter === 'all'
+                  ? 'bg-teal-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Tất cả ({report.rows.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setListStatusFilter('completed')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                listStatusFilter === 'completed'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Đã nộp ({report.rows.filter((r) => r._isComplete).length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setListStatusFilter('pending')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                listStatusFilter === 'pending'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Chưa nộp ({report.rows.filter((r) => !r._isComplete).length})
+            </button>
+          </div>
+
+          {/* Table of Rows */}
+          <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-700 font-black">
+                <tr>
+                  <th className="py-2.5 px-3 w-12 text-center border-r border-slate-200">#</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">{idCol?.name || 'Tên / Lớp'}</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Người nộp / Thời gian</th>
+                  <th className="py-2.5 px-3 text-center border-r border-slate-200">Trạng thái</th>
+                  <th className="py-2.5 px-3 text-center w-24">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(() => {
+                  const filtered = report.rows.filter((row) => {
+                    if (listStatusFilter === 'completed' && !row._isComplete) return false;
+                    if (listStatusFilter === 'pending' && row._isComplete) return false;
+                    if (listSearchTerm.trim()) {
+                      const term = listSearchTerm.toLowerCase();
+                      const val = idCol && row[idCol.id] ? String(row[idCol.id]).toLowerCase() : '';
+                      const by = row._submittedBy ? String(row._submittedBy).toLowerCase() : '';
+                      if (!val.includes(term) && !by.includes(term)) return false;
+                    }
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-slate-400">
+                          Không tìm thấy dòng nào phù hợp.
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filtered.map((row, idx) => {
+                    const title = idCol && row[idCol.id] ? String(row[idCol.id]) : `Dòng ${idx + 1}`;
+                    const isSelected = selectedRowId === row.id && !isCreatingNew;
+                    const isComplete = row._isComplete;
+
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`transition-colors hover:bg-teal-50/40 cursor-pointer ${
+                          isSelected ? 'bg-teal-50 font-bold' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                        }`}
+                        onClick={() => handleSelectRow(row.id)}
+                      >
+                        <td className="py-2 px-3 text-center text-slate-500 font-bold border-r border-slate-100">
+                          {idx + 1}
+                        </td>
+                        <td className="py-2 px-3 text-slate-900 font-bold border-r border-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <span>{title}</span>
+                            {isSelected && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-teal-600 text-white font-extrabold">
+                                Đang chọn
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-slate-600 border-r border-slate-100">
+                          {row._submittedBy ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-teal-800">👤 {row._submittedBy}</span>
+                              {row._submittedAt && (
+                                <span className="text-[10px] text-slate-400">
+                                  • {new Date(row._submittedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">— Chưa cập nhật —</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-center border-r border-slate-100">
+                          {isComplete ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>Đã hoàn thành</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>Chưa nộp</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectRow(row.id);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 font-extrabold text-[11px] transition-all cursor-pointer"
+                          >
+                            {isSelected ? 'Đang điền' : 'Điền số liệu'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <footer className="text-center text-[11px] text-slate-400 py-4 mt-6">

@@ -74,7 +74,15 @@ export default function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [contactInfo, setContactInfo] = useState<ContactInfo>(() => getLocalCachedContactInfo());
   const [userApiKey, setUserApiKey] = useState<string>(() => getStoredApiKey(getSavedSessionUser()));
-  const [sharedReportId, setSharedReportId] = useState<string | null>(null);
+  const [sharedReportId, setSharedReportId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('reportId') || params.get('report') || params.get('report_id') || null;
+    } catch {
+      return null;
+    }
+  });
 
   // References to guarantee no race conditions across browsers
   const cloudLoadedUserRef = useRef<string | null>(null);
@@ -203,7 +211,7 @@ export default function App() {
       const tabParam = params.get('tab') || params.get('page');
       const shareIdParam = params.get('shareId') || params.get('gameId');
       const gameParam = params.get('game');
-      const reportIdParam = params.get('reportId') || params.get('report');
+      const reportIdParam = params.get('reportId') || params.get('report') || params.get('report_id');
 
       if (reportIdParam) {
         setSharedReportId(reportIdParam);
@@ -410,8 +418,37 @@ export default function App() {
     setDbConnected(true);
   };
 
-  // Check if URL contains student tugTeam parameter, page=film, or game room param for direct student/guest access
+  // Check URL parameters for direct public access (shared report form, student tug game, etc.)
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const urlReportId = urlParams?.get('reportId') || urlParams?.get('report') || urlParams?.get('report_id');
+  const activeSharedReportId = sharedReportId || urlReportId;
+
+  // 1. PUBLIC SHARED REPORT FORM: Direct access without requiring login!
+  if (activeSharedReportId) {
+    return (
+      <SharedReportFormView
+        reportId={activeSharedReportId}
+        currentUser={currentUser}
+        onBackToApp={() => {
+          setSharedReportId(null);
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('reportId');
+            url.searchParams.delete('report');
+            url.searchParams.delete('report_id');
+            url.searchParams.delete('page');
+            window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+          } catch {
+            try {
+              window.history.replaceState({}, '', window.location.pathname);
+            } catch {}
+          }
+        }}
+      />
+    );
+  }
+
+  // 2. STUDENT TUG GAME DIRECT ACCESS:
   const isStudentTugAccess =
     (urlParams?.has('tugTeam') && urlParams.get('tugTeam') !== 'teacher') ||
     urlParams?.get('page') === 'film' ||
@@ -434,7 +471,7 @@ export default function App() {
     );
   }
 
-  // If not logged in and not accessing student tug-of-war link, show Login Screen
+  // 3. If not logged in and not accessing public links, show Login Screen
   if (!currentUser) {
     return (
       <LoginScreen
@@ -593,21 +630,7 @@ export default function App() {
   const currentUserExpInfo = getAccountExpirationInfo(currentUser);
   const isCurrentUserExpired = currentUser?.role !== 'admin' && currentUserExpInfo.isExpired;
 
-  // If accessed directly via shared report form link or QR code
-  if (sharedReportId) {
-    return (
-      <SharedReportFormView
-        reportId={sharedReportId}
-        currentUser={currentUser}
-        onBackToApp={() => {
-          setSharedReportId(null);
-          try {
-            window.history.replaceState({}, '', window.location.pathname);
-          } catch {}
-        }}
-      />
-    );
-  }
+
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-br from-teal-50/70 via-emerald-50/40 to-teal-100/30 text-slate-800 flex flex-col lg:flex-row relative">
