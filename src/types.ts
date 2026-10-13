@@ -604,6 +604,10 @@ export interface ReportColumn {
   isInputField?: boolean; // Cột cho phép điền số liệu (được đưa vào form)
   defaultValue?: string | number;
   description?: string; // Gợi ý hoặc hướng dẫn nhập
+  groupName?: string; // Tên nhóm / Cột gộp cha từ Excel (Ví dụ: "Số học sinh", "BHYT", "Học kỳ 1")
+  subName?: string; // Tên cột con nếu nằm trong cột gộp (Ví dụ: "Nữ", "Dân tộc", "Đã nộp")
+  isMerged?: boolean; // Đánh dấu thuộc nhóm cột gộp
+  colSpan?: number; // Độ rộng nhãn gộp
 }
 
 export interface ReportRow {

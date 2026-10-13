@@ -11,11 +11,14 @@ import {
   ArrowLeft,
   Sparkles,
   School,
-  Share2
+  Share2,
+  PlusCircle,
+  AlertTriangle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { UrgentReportItem, ReportRow, ReportColumn, UserAccount } from '../types';
 import { fetchUrgentReportFromFirestore, submitReportRowToFirestore } from '../services/dbService';
+import { isPersonNameOrTextColumn } from '../utils/excelReportHelper';
 
 interface SharedReportFormViewProps {
   reportId: string;
@@ -39,6 +42,13 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
   const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
   const [submitterName, setSubmitterName] = useState<string>('');
   const [formData, setFormData] = useState<Record<string, any>>({});
+  const [submittingAction, setSubmittingAction] = useState<'save_new' | 'save_close' | null>(null);
+  const [duplicateMatchInfo, setDuplicateMatchInfo] = useState<{
+    row: ReportRow;
+    colName: string;
+    value: string;
+  } | null>(null);
+  const [duplicateResolution, setDuplicateResolution] = useState<'create_new' | 'overwrite'>('create_new');
 
   useEffect(() => {
     let active = true;
@@ -49,7 +59,16 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
         const data = await fetchUrgentReportFromFirestore(reportId);
         if (active) {
           if (data) {
-            setReport(data);
+            // Automatically ensure Họ và tên and text columns are type: 'text'
+            const sanitizedColumns = (data.columns || []).map((c) => {
+              const isNameOrText = isPersonNameOrTextColumn(c.name) || isPersonNameOrTextColumn(c.subName || '');
+              return {
+                ...c,
+                type: isNameOrText ? ('text' as const) : c.type
+              };
+            });
+            const sanitizedData = { ...data, columns: sanitizedColumns };
+            setReport(sanitizedData);
             // Default select the first row if available
             if (data.rows && data.rows.length > 0) {
               const firstRow = data.rows[0];
@@ -104,15 +123,50 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     setFormData(initial);
   };
 
-  const handleFieldChange = (colId: string, val: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      [colId]: val
-    }));
+  // Check duplicate matches in real-time when user types
+  const checkDuplicate = (data: Record<string, any>, currentEditId: string | null) => {
+    if (!report || !report.rows || report.rows.length === 0) return null;
+
+    const checkCols = report.columns.filter((c) =>
+      c.isIdentifier ||
+      c.id === report.identifierColumnId ||
+      c.name.toLowerCase().includes('lớp') ||
+      c.name.toLowerCase().includes('họ và tên') ||
+      c.name.toLowerCase().includes('họ tên')
+    );
+
+    for (const col of checkCols) {
+      const val = data[col.id];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        const valStr = String(val).trim().toLowerCase();
+        const matched = report.rows.find((r) => {
+          if (currentEditId && r.id === currentEditId) return false;
+          const rowVal = r[col.id];
+          return rowVal !== undefined && rowVal !== null && String(rowVal).trim().toLowerCase() === valStr;
+        });
+        if (matched) {
+          return {
+            row: matched,
+            colName: col.subName || col.name,
+            value: String(val).trim()
+          };
+        }
+      }
+    }
+    return null;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleFieldChange = (colId: string, val: any) => {
+    setFormData((prev) => {
+      const next = { ...prev, [colId]: val };
+      const dup = checkDuplicate(next, isCreatingNew ? null : selectedRowId);
+      setDuplicateMatchInfo(dup);
+      return next;
+    });
+  };
+
+  const handleSubmit = async (e?: React.FormEvent, keepOpen: boolean = false) => {
+    if (e) e.preventDefault();
     if (!report) return;
 
     if (report.status === 'closed') {
@@ -121,40 +175,68 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     }
 
     // Validate required fields
-    const requiredCols = report.columns.filter((c) => c.required && c.isInputField);
+    const requiredCols = report.columns.filter((c) => c.required && (c.isInputField || c.isIdentifier));
     for (const c of requiredCols) {
       const val = formData[c.id];
       if (val === undefined || val === null || String(val).trim() === '') {
-        alert(`Vui lòng điền thông tin cho cột bắt buộc: "${c.name}"`);
+        alert(`Vui lòng điền thông tin cho cột bắt buộc: "${c.subName || c.name}"`);
         return;
       }
     }
 
     setSubmitting(true);
+    setSubmittingAction(keepOpen ? 'save_new' : 'save_close');
     setSuccessMsg('');
     setErrorMsg('');
 
     try {
+      let targetRowId = selectedRowId;
+      let isNew = isCreatingNew;
+
+      if (duplicateMatchInfo) {
+        if (duplicateResolution === 'create_new') {
+          isNew = true;
+          targetRowId = `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        } else {
+          isNew = false;
+          targetRowId = duplicateMatchInfo.row.id;
+        }
+      }
+
       const rowToSubmit: ReportRow = {
-        id: isCreatingNew ? `row_${Date.now()}` : selectedRowId,
+        id: targetRowId || `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         ...formData
       };
 
       const result = await submitReportRowToFirestore(
         report.id,
         rowToSubmit,
-        isCreatingNew,
+        isNew,
         submitterName || currentUser?.name || 'Giáo viên'
       );
 
       if (result.success && result.report) {
         setReport(result.report);
-        setSuccessMsg('Đã gửi số liệu báo cáo thành công! Số liệu đã được cập nhật vào bảng tổng hợp của nhà trường.');
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
+
+        const idCol = report.columns.find((c) => c.id === report.identifierColumnId || c.isIdentifier) || report.columns[1] || report.columns[0];
+        const rowTitle = idCol && rowToSubmit[idCol.id] ? String(rowToSubmit[idCol.id]) : 'số liệu';
+
+        if (keepOpen) {
+          setSuccessMsg(`🎉 Đã lưu thành công số liệu "${rowTitle}"! Biểu mẫu đã sẵn sàng để Thầy/Cô tiếp tục nhập đối tượng tiếp theo.`);
+          // Reset form for next entry
+          setFormData({});
+          setIsCreatingNew(true);
+          setSelectedRowId(`row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`);
+          setDuplicateMatchInfo(null);
+          setDuplicateResolution('create_new');
+        } else {
+          setSuccessMsg(`🎉 Đã gửi số liệu báo cáo "${rowTitle}" thành công! Dữ liệu đã được cập nhật vào bảng tổng hợp của nhà trường.`);
+          confetti({
+            particleCount: 80,
+            spread: 70,
+            origin: { y: 0.6 }
+          });
+        }
       } else {
         setErrorMsg(result.error || 'Có lỗi xảy ra khi nộp số liệu.');
       }
@@ -162,6 +244,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
       setErrorMsg('Không thể lưu số liệu: ' + (err?.message || 'Lỗi không xác định'));
     } finally {
       setSubmitting(false);
+      setSubmittingAction(null);
     }
   };
 
@@ -373,6 +456,56 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               )}
             </div>
 
+            {/* Real-time Concurrent Duplicate Warning & Resolution */}
+            {duplicateMatchInfo && (
+              <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-2.5 text-xs animate-in fade-in">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1 flex-1">
+                    <h4 className="font-black text-amber-950 flex items-center gap-1.5 flex-wrap">
+                      <span>Phát hiện dữ liệu đã có người nộp:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-200/90 text-amber-900 font-black text-[11px]">
+                        {duplicateMatchInfo.colName}: "{duplicateMatchInfo.value}"
+                      </span>
+                    </h4>
+                    <p className="text-amber-800 text-[11px] leading-relaxed">
+                      Đã có bản ghi trên hệ thống{duplicateMatchInfo.row._submittedBy ? ` do "${duplicateMatchInfo.row._submittedBy}" gửi` : ''}{duplicateMatchInfo.row._submittedAt ? ` lúc ${new Date(duplicateMatchInfo.row._submittedAt).toLocaleTimeString('vi-VN')}` : ''}. Để tránh làm mất hoặc ghi đè dữ liệu của người khác cùng nhập, vui lòng chọn:
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-amber-200/90">
+                  <label className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${duplicateResolution === 'create_new' ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="dup_res_shared"
+                      checked={duplicateResolution === 'create_new'}
+                      onChange={() => setDuplicateResolution('create_new')}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="text-[11px]">
+                      <span className="font-black text-emerald-900 block">✨ Lưu thành bản ghi riêng biệt</span>
+                      <span className="text-slate-500 text-[10px]">An toàn tuyệt đối - Giữ trọn dữ liệu cả hai người</span>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${duplicateResolution === 'overwrite' ? 'bg-amber-100/70 border-amber-400 ring-2 ring-amber-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="dup_res_shared"
+                      checked={duplicateResolution === 'overwrite'}
+                      onChange={() => setDuplicateResolution('overwrite')}
+                      className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                    />
+                    <div className="text-[11px]">
+                      <span className="font-black text-amber-900 block">✏️ Cập nhật đè lên dòng này</span>
+                      <span className="text-slate-500 text-[10px]">Chỉ chọn khi Thầy/Cô muốn sửa lại số liệu cũ</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            )}
+
             {/* Submitter Name input (Optional) */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-700">
@@ -387,7 +520,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               />
             </div>
 
-            {/* Dynamic Input Fields Generated from Excel Columns */}
+            {/* Dynamic Input Fields Generated from Excel Columns (Merged & Unmerged) */}
             <div className="space-y-4 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-teal-900 tracking-wider">
@@ -398,90 +531,195 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                 </span>
               </div>
 
-              {inputColumns.map((col) => {
-                const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
+              {(() => {
+                const groupsMap: Record<string, ReportColumn[]> = {};
+                const standalone: ReportColumn[] = [];
+
+                inputColumns.forEach((col) => {
+                  if (col.groupName) {
+                    if (!groupsMap[col.groupName]) groupsMap[col.groupName] = [];
+                    groupsMap[col.groupName].push(col);
+                  } else {
+                    standalone.push(col);
+                  }
+                });
+
                 return (
-                  <div key={col.id} className="space-y-1 bg-slate-50/60 p-3.5 rounded-2xl border border-slate-200/90">
-                    <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 inline-block" />
-                        <span>{col.name}</span>
-                        {col.required && <span className="text-rose-500 font-black">*</span>}
-                      </span>
-                      <span className="text-[10px] font-normal text-slate-400">
-                        {col.type === 'number' ? 'Số' : 'Văn bản'}
-                      </span>
-                    </label>
+                  <div className="space-y-4">
+                    {/* 1. Merged Groups Cards */}
+                    {Object.entries(groupsMap).map(([groupTitle, cols]) => (
+                      <div key={groupTitle} className="bg-teal-50/50 rounded-2xl border-2 border-teal-200/90 overflow-hidden shadow-2xs">
+                        <div className="px-4 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-black text-xs sm:text-sm flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <span>🏷️ {groupTitle}</span>
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
+                            {cols.length} cột số liệu
+                          </span>
+                        </div>
+                        <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
+                          {cols.map((col) => {
+                            const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
+                            const isColName = isPersonNameOrTextColumn(col.subName || col.name);
+                            const isNumber = col.type === 'number' && !isColName;
 
-                    {col.description && (
-                      <p className="text-[11px] text-teal-700 font-medium">{col.description}</p>
-                    )}
+                            return (
+                              <div key={col.id} className="space-y-1 bg-slate-50/70 p-3 rounded-xl border border-slate-200/90">
+                                <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0 inline-block" />
+                                    <span className="truncate">{col.subName || col.name}</span>
+                                    {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
+                                  </span>
+                                  <span className="text-[10px] font-normal text-slate-400 shrink-0">
+                                    {isNumber ? 'Số' : 'Chữ'}
+                                  </span>
+                                </label>
 
-                    {col.type === 'number' ? (
-                      <input
-                        type="number"
-                        value={currentVal}
-                        onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
-                        required={col.required}
-                        placeholder={`Nhập ${col.name}...`}
-                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                      />
-                    ) : col.type === 'select' && col.options && col.options.length > 0 ? (
-                      <select
-                        value={currentVal}
-                        onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                        required={col.required}
-                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer shadow-2xs"
-                      >
-                        <option value="">-- Chọn {col.name} --</option>
-                        {col.options.map((opt, i) => (
-                          <option key={i} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : col.name.toLowerCase().includes('ghi chú') || col.name.toLowerCase().includes('khó khăn') ? (
-                      <textarea
-                        rows={2}
-                        value={currentVal}
-                        onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                        required={col.required}
-                        placeholder={`Ghi chú thêm...`}
-                        className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={currentVal}
-                        onChange={(e) => handleFieldChange(col.id, e.target.value)}
-                        required={col.required}
-                        placeholder={`Nhập ${col.name}...`}
-                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
-                      />
+                                {col.description && (
+                                  <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
+                                )}
+
+                                {isNumber ? (
+                                  <input
+                                    type="number"
+                                    value={currentVal}
+                                    onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
+                                    required={col.required}
+                                    placeholder={`Nhập ${col.subName || col.name}...`}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                                  />
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={currentVal}
+                                    onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                                    required={col.required}
+                                    placeholder={`Nhập ${col.subName || col.name}...`}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* 2. Standalone / Unmerged Columns */}
+                    {standalone.length > 0 && (
+                      <div className="bg-slate-50/70 rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                        <div className="px-4 py-2 bg-slate-200/90 text-slate-800 font-black text-xs flex items-center justify-between">
+                          <span>📋 CỘT ĐỘC LẬP / THÔNG TIN KHÁC</span>
+                          <span className="text-[10px] text-slate-500 font-bold">{standalone.length} trường</span>
+                        </div>
+                        <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
+                          {standalone.map((col) => {
+                            const currentVal = formData[col.id] !== undefined ? formData[col.id] : '';
+                            const isColName = isPersonNameOrTextColumn(col.name);
+                            const isNumber = col.type === 'number' && !isColName;
+
+                            return (
+                              <div key={col.id} className="space-y-1 bg-slate-50/70 p-3 rounded-xl border border-slate-200/90">
+                                <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-600 shrink-0 inline-block" />
+                                    <span className="truncate">{col.name}</span>
+                                    {col.required && <span className="text-rose-500 font-black shrink-0">*</span>}
+                                  </span>
+                                  <span className="text-[10px] font-normal text-slate-400 shrink-0">
+                                    {isNumber ? 'Số' : 'Chữ'}
+                                  </span>
+                                </label>
+
+                                {col.description && (
+                                  <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
+                                )}
+
+                                {isNumber ? (
+                                  <input
+                                    type="number"
+                                    value={currentVal}
+                                    onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
+                                    required={col.required}
+                                    placeholder={`Nhập ${col.name}...`}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                                  />
+                                ) : col.name.toLowerCase().includes('ghi chú') || col.name.toLowerCase().includes('khó khăn') ? (
+                                  <textarea
+                                    rows={2}
+                                    value={currentVal}
+                                    onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                                    required={col.required}
+                                    placeholder={`Ghi chú thêm...`}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                                  />
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={currentVal}
+                                    onChange={(e) => handleFieldChange(col.id, e.target.value)}
+                                    required={col.required}
+                                    placeholder={`Nhập ${col.name}...`}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
                 );
-              })}
+              })()}
             </div>
 
-            {/* Submit button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-sm shadow-lg shadow-teal-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
-              >
-                {submitting ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Đang lưu số liệu lên hệ thống...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    <span>Gửi & Cập Nhật Số Liệu Báo Cáo</span>
-                  </>
-                )}
-              </button>
-              <p className="text-center text-[11px] text-slate-400 mt-2 font-medium">
+            {/* Submit buttons */}
+            <div className="pt-3 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Nút 1: Lưu & Thêm Mới */}
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(undefined, true)}
+                  disabled={submitting}
+                  className="py-3.5 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-sm shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
+                  title="Lưu số liệu đối tượng này và giữ form để nhập tiếp đối tượng tiếp theo"
+                >
+                  {submitting && submittingAction === 'save_new' ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Đang lưu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PlusCircle className="w-4 h-4" />
+                      <span>Lưu & Thêm Mới</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Nút 2: Gửi & Hoàn Thành */}
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="py-3.5 px-5 rounded-2xl bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-xs sm:text-sm shadow-md shadow-teal-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
+                >
+                  {submitting && submittingAction !== 'save_new' ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Đang gửi...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Gửi & Hoàn Thành</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <p className="text-center text-[11px] text-slate-400 font-medium">
                 🔒 Số liệu sau khi gửi sẽ tự động đồng bộ ngay vào file Excel tổng hợp của trường.
               </p>
             </div>

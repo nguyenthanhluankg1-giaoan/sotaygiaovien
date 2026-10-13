@@ -21,9 +21,9 @@ export const DEFAULT_URGENT_REPORTS: UrgentReportItem[] = [
     submissionsCount: 7,
     columns: [
       { id: 'col_stt', name: 'STT', type: 'number', required: false, isIdentifier: false, isInputField: false },
-      { id: 'col_lop', name: 'Lớp', type: 'text', required: true, isIdentifier: true, isInputField: false, description: 'Chọn lớp chủ nhiệm' },
-      { id: 'col_gvcn', name: 'Giáo viên chủ nhiệm', type: 'text', required: false, isIdentifier: false, isInputField: false },
-      { id: 'col_tong_hs', name: 'Tổng số HS', type: 'number', required: true, isIdentifier: false, isInputField: false },
+      { id: 'col_lop', name: 'Lớp', type: 'text', required: true, isIdentifier: true, isInputField: true, description: 'Chọn lớp chủ nhiệm' },
+      { id: 'col_gvcn', name: 'Giáo viên chủ nhiệm', type: 'text', required: false, isIdentifier: false, isInputField: true, description: 'Họ và tên GVCN' },
+      { id: 'col_tong_hs', name: 'Tổng số HS', type: 'number', required: true, isIdentifier: false, isInputField: true, description: 'Sĩ số học sinh của lớp' },
       { id: 'col_da_nop', name: 'Số HS đã nộp BHYT', type: 'number', required: true, isInputField: true, description: 'Nhập số học sinh đã nộp tiền BHYT đợt này' },
       { id: 'col_chua_nop', name: 'Số HS chưa nộp', type: 'number', required: false, isInputField: true, description: 'Số học sinh còn thiếu hoặc diện miễn giảm' },
       { id: 'col_so_tien', name: 'Tổng tiền đã thu (VNĐ)', type: 'number', required: false, isInputField: true, description: 'Số tiền thực thu của lớp' },
