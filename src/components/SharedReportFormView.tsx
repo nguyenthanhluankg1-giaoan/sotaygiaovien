@@ -459,42 +459,42 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-800 py-4 px-3 sm:px-6 lg:px-8 flex flex-col justify-between">
       <div className="max-w-7xl mx-auto w-full space-y-4 sm:space-y-5">
         {/* Top actions & brand header bar */}
-        <div className="flex items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+        <div className="flex items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
           {onBackToApp ? (
             <button
               onClick={onBackToApp}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-4 h-4" />
               <span>{currentUser ? 'Về bảng điều khiển' : 'Đăng nhập tài khoản'}</span>
             </button>
           ) : (
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-teal-600 text-white flex items-center justify-center font-black text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center font-black text-xs sm:text-sm">
                 TY1
               </div>
-              <span className="text-xs sm:text-sm font-black text-teal-900">Trường TH Thạnh Yên 1</span>
+              <span className="text-sm sm:text-base font-black text-teal-900">Trường TH Thạnh Yên 1</span>
             </div>
           )}
 
           <div className="flex items-center gap-2">
             {report.urgentLevel === 'very_urgent' && (
-              <span className="px-2.5 py-1 rounded-full bg-rose-600 text-white font-black text-[10px] sm:text-xs animate-pulse">
+              <span className="px-3 py-1 rounded-full bg-rose-600 text-white font-black text-xs sm:text-sm animate-pulse">
                 ⚡ HỎA TỐC
               </span>
             )}
             {report.urgentLevel === 'urgent' && (
-              <span className="px-2.5 py-1 rounded-full bg-amber-500 text-white font-black text-[10px] sm:text-xs">
+              <span className="px-3 py-1 rounded-full bg-amber-500 text-white font-black text-xs sm:text-sm">
                 🔥 BÁO CÁO GẤP
               </span>
             )}
             {isClosed ? (
-              <span className="px-2.5 py-1 rounded-full bg-slate-700 text-white font-black text-[10px] sm:text-xs flex items-center gap-1">
-                <Lock className="w-3.5 h-3.5" />
+              <span className="px-3 py-1 rounded-full bg-slate-700 text-white font-black text-xs sm:text-sm flex items-center gap-1.5">
+                <Lock className="w-4 h-4" />
                 <span>ĐÃ KHÓA</span>
               </span>
             ) : (
-              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] sm:text-xs">
+              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-xs sm:text-sm">
                 🟢 ĐANG NHẬN SỐ LIỆU
               </span>
             )}
@@ -503,21 +503,21 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
 
         {/* Public Share Banner */}
         {!currentUser && (
-          <div className="bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 text-white rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center shrink-0">
+          <div className="bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-700 text-white rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center shrink-0">
                 <Sparkles className="w-5 h-5" />
               </div>
               <div>
-                <p className="font-black text-xs sm:text-sm leading-snug">
+                <p className="font-black text-sm sm:text-base leading-snug">
                   Hệ Thống Trực Tuyến Nhập Báo Cáo Nhanh
                 </p>
-                <p className="text-[11px] sm:text-xs opacity-90 font-medium">
+                <p className="text-xs sm:text-sm opacity-95 font-medium mt-0.5">
                   Quý Thầy/Cô chọn Lớp / Đối tượng của mình và điền số liệu — <strong>Hoàn toàn không cần đăng nhập</strong>.
                 </p>
               </div>
             </div>
-            <span className="hidden md:inline-flex px-3 py-1 rounded-full bg-white/20 text-white font-black text-xs shrink-0">
+            <span className="hidden md:inline-flex px-3.5 py-1.5 rounded-full bg-white/20 text-white font-black text-xs sm:text-sm shrink-0">
               ✓ Tự do nhập
             </span>
           </div>
@@ -527,7 +527,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
         {isClosed && (
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center gap-3">
             <Lock className="w-5 h-5 text-amber-600 shrink-0" />
-            <p className="text-xs font-bold leading-relaxed">
+            <p className="text-xs sm:text-sm font-bold leading-relaxed">
               Biểu mẫu này đã kết thúc thời gian thu thập hoặc được người phụ trách khóa lại. Vui lòng liên hệ quản trị viên nếu cần cập nhật bổ sung.
             </p>
           </div>
@@ -535,19 +535,19 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
 
         {/* Success Alert */}
         {successMsg && (
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 flex items-start gap-3 animate-in fade-in shadow-2xs">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 flex items-start gap-3.5 animate-in fade-in shadow-2xs">
+            <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <h4 className="text-xs sm:text-sm font-black text-emerald-900">Gửi số liệu thành công!</h4>
-              <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed">{successMsg}</p>
+              <h4 className="text-sm sm:text-base font-black text-emerald-900">Gửi số liệu thành công!</h4>
+              <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed font-medium">{successMsg}</p>
             </div>
           </div>
         )}
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-300 text-rose-950 flex items-center gap-3 shadow-2xs">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+          <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-950 flex items-center gap-3 shadow-2xs">
+            <AlertCircle className="w-6 h-6 text-rose-600 shrink-0" />
             <p className="text-xs sm:text-sm text-rose-800 font-bold">{errorMsg}</p>
           </div>
         )}
@@ -561,35 +561,35 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               
               {/* Report Header Card */}
               <div className="bg-white rounded-3xl border border-teal-200/90 p-5 sm:p-6 shadow-sm space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-teal-600/20">
-                    <FileSpreadsheet className="w-5 h-5" />
+                <div className="flex items-start gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-teal-600/20">
+                    <FileSpreadsheet className="w-6 h-6" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[10px] sm:text-[11px] font-black uppercase text-teal-700 tracking-wider">
+                    <span className="text-xs font-black uppercase text-teal-700 tracking-wider">
                       BIỂU MẪU BÁO CÁO GẤP
                     </span>
-                    <h1 className="text-base sm:text-lg font-black text-slate-900 leading-snug mt-0.5">
+                    <h1 className="text-base sm:text-xl font-black text-slate-900 leading-snug mt-0.5">
                       {report.title}
                     </h1>
                   </div>
                 </div>
 
                 {report.description && (
-                  <p className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                  <p className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
                     {report.description}
                   </p>
                 )}
 
                 {/* Progress summary bar */}
-                <div className="p-3 bg-teal-50/70 rounded-2xl border border-teal-100 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-teal-900">
+                <div className="p-3.5 bg-teal-50/80 rounded-2xl border border-teal-100 space-y-2">
+                  <div className="flex items-center justify-between text-xs sm:text-sm font-extrabold text-teal-900">
                     <span>Tiến độ đã nộp:</span>
-                    <span className="px-2 py-0.5 rounded-full bg-teal-600 text-white text-[10px] font-black">
+                    <span className="px-2.5 py-0.5 rounded-full bg-teal-600 text-white text-xs font-black">
                       {report.rows.filter((r) => r._isComplete).length} / {report.rows.length} đối tượng
                     </span>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-teal-200/80 overflow-hidden">
+                  <div className="w-full h-2.5 rounded-full bg-teal-200/80 overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-teal-600 to-emerald-500 transition-all duration-500"
                       style={{
@@ -604,14 +604,14 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
+                <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-100 text-xs sm:text-sm text-slate-600 font-medium">
                   <div className="flex items-center gap-1.5">
-                    <School className="w-3.5 h-3.5 text-teal-600" />
-                    <span>Người tạo: <strong>{report.creatorName}</strong></span>
+                    <School className="w-4 h-4 text-teal-600" />
+                    <span>Người tạo: <strong className="text-slate-900">{report.creatorName}</strong></span>
                   </div>
                   {report.deadline && (
                     <div className="flex items-center gap-1.5 text-rose-600 font-bold">
-                      <Clock className="w-3.5 h-3.5" />
+                      <Clock className="w-4 h-4" />
                       <span>Hạn: {new Date(report.deadline).toLocaleString('vi-VN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                   )}
@@ -621,18 +621,18 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
               {/* Step 1 Card: Quick Object Selection Dropdown (STT / Lớp / Tên) */}
               <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-1.5">
+                  <span className="text-xs sm:text-sm font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
                     <User className="w-4 h-4 text-teal-600" />
                     <span>1. CHỌN NHANH LỚP / ĐỐI TƯỢNG (TÙY CHỌN)</span>
                   </span>
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                     Tùy chọn
                   </span>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-800">
+                    <label className="text-xs sm:text-sm font-bold text-slate-800">
                       Chọn Lớp / STT để nạp nhanh số liệu (nếu cần):
                     </label>
                     <div className="relative">
@@ -648,7 +648,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                             setSelectedRowId('');
                           }
                         }}
-                        className="w-full px-3.5 py-2.5 pr-8 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 focus:bg-white transition-all shadow-2xs appearance-none cursor-pointer"
+                        className="w-full px-4 py-3 pr-10 bg-slate-50 border-2 border-slate-300 rounded-2xl text-xs sm:text-base font-bold text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-all shadow-2xs appearance-none cursor-pointer"
                       >
                         <option value="">-- Bấm vào đây để chọn Lớp từ danh sách (hoặc gõ tự do ở Mục 2) --</option>
                         {report.rows.map((r, idx) => {
@@ -662,15 +662,15 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                         })}
                         <option value="new_row">✨ + Thêm đối tượng mới ngoài danh sách</option>
                       </select>
-                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <ChevronDown className="w-5 h-5 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-xs sm:text-sm text-slate-600 font-medium">
                       💡 Thầy/Cô có thể chọn Lớp tại đây để nạp nhanh dữ liệu, hoặc gõ trực tiếp tên Lớp/Đối tượng ở Mục 2 bên phải.
                     </p>
                   </div>
 
                   <div className="space-y-1.5 pt-1">
-                    <label className="text-xs font-bold text-slate-800">
+                    <label className="text-xs sm:text-sm font-bold text-slate-800">
                       Họ và tên người gửi / GV phụ trách (Tùy chọn):
                     </label>
                     <input
@@ -678,7 +678,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                       value={submitterName}
                       onChange={(e) => setSubmitterName(e.target.value)}
                       placeholder="Nhập tên Giáo viên / Người nộp..."
-                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:border-teal-500 focus:bg-white shadow-2xs"
+                      className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs sm:text-base font-medium text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white shadow-2xs"
                     />
                   </div>
                 </div>
@@ -693,28 +693,28 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                 
                 {/* Auto-recognition badge */}
                 {autoRecognitionInfo && (
-                  <div className={`p-3.5 rounded-2xl border flex items-start gap-3 text-xs font-medium transition-all ${
+                  <div className={`p-4 rounded-2xl border flex items-start gap-3.5 text-xs sm:text-sm font-medium transition-all ${
                     autoRecognitionInfo.isMatch
                       ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 shadow-2xs'
                       : 'bg-sky-50/90 border-sky-300 text-sky-950 shadow-2xs'
                   }`}>
                     {autoRecognitionInfo.isMatch ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
                     ) : (
-                      <Sparkles className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />
+                      <Sparkles className="w-6 h-6 text-sky-600 shrink-0 mt-0.5" />
                     )}
                     <div className="space-y-0.5 min-w-0 flex-1">
                       {autoRecognitionInfo.isMatch ? (
-                        <p className="font-extrabold text-emerald-900 leading-snug">
+                        <p className="font-extrabold text-emerald-900 text-sm sm:text-base leading-snug">
                           🟢 Khớp đối tượng: "{autoRecognitionInfo.title}"
                           {autoRecognitionInfo.isComplete && autoRecognitionInfo.submittedBy ? ` (Gần nhất: ${autoRecognitionInfo.submittedBy})` : ''}
                         </p>
                       ) : (
-                        <p className="font-extrabold text-sky-900 leading-snug">
+                        <p className="font-extrabold text-sky-900 text-sm sm:text-base leading-snug">
                           ✨ Nhận diện đối tượng mới: "{autoRecognitionInfo.title}"
                         </p>
                       )}
-                      <p className="text-[11px] opacity-90 leading-relaxed">
+                      <p className="text-xs sm:text-sm opacity-90 leading-relaxed font-medium">
                         {autoRecognitionInfo.isMatch
                           ? 'Số liệu sẽ tự động cập nhật chính xác vào dòng này, không lo bị trùng lặp hay mất bài.'
                           : 'Số liệu sẽ được tự động thêm mới vào bảng tổng hợp của nhà trường.'}
@@ -726,11 +726,11 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                 {/* Form Inputs */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <span className="text-xs font-black uppercase text-teal-900 tracking-wider flex items-center gap-1.5">
+                    <span className="text-xs sm:text-sm font-black uppercase text-teal-900 tracking-wider flex items-center gap-2">
                       <ListOrdered className="w-4 h-4 text-teal-600" />
                       <span>2. CÁC SỐ LIỆU CẦN ĐIỀN</span>
                     </span>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-800">
+                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-50 text-teal-800">
                       {inputColumns.length} trường dữ liệu
                     </span>
                   </div>
@@ -751,32 +751,32 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                           key={col.id}
                           className={`space-y-1.5 ${isTextArea || isIdField ? 'sm:col-span-2' : ''}`}
                         >
-                          <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                          <label className="text-xs sm:text-sm font-extrabold text-slate-900 flex items-center justify-between gap-2">
                             <span className="flex items-center gap-1.5 min-w-0">
-                              <span className={`w-2 h-2 rounded-full shrink-0 inline-block ${isIdField ? 'bg-teal-600 animate-pulse' : isGrouped ? 'bg-teal-600' : 'bg-slate-400'}`} />
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 inline-block ${isIdField ? 'bg-teal-600 animate-pulse' : isGrouped ? 'bg-teal-600' : 'bg-slate-400'}`} />
                               <span className="truncate">{col.subName || col.name} {isIdField ? '(Lớp / Đối tượng báo cáo)' : ''}</span>
-                              {(col.required || isIdField) && <span className="text-rose-500 font-black shrink-0">*</span>}
+                              {(col.required || isIdField) && <span className="text-rose-500 font-black shrink-0 text-sm sm:text-base">*</span>}
                             </span>
-                            <span className={`text-[10px] font-bold shrink-0 ${isIdField ? 'text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200' : 'text-slate-400'}`}>
+                            <span className={`text-xs font-bold shrink-0 ${isIdField ? 'text-teal-800 bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-200' : 'text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full'}`}>
                               {isIdField ? 'Nhập tự do / Nhận diện tự động' : isSttField ? 'Tự tăng' : isNumber ? 'Số' : 'Chữ'}
                             </span>
                           </label>
 
                           {col.description && (
-                            <p className="text-[10px] text-teal-700 font-medium truncate">{col.description}</p>
+                            <p className="text-xs text-teal-800 font-medium truncate">{col.description}</p>
                           )}
 
                           {isIdField ? (
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                               <input
                                 type="text"
                                 value={currentVal}
                                 onChange={(e) => handleFieldChange(col.id, e.target.value)}
                                 required
                                 placeholder={`Nhập tên Lớp / Đối tượng (ví dụ: Lớp 1A, Lớp 2B, Nguyễn Văn A)...`}
-                                className="w-full px-3.5 py-2.5 bg-teal-50/70 border-2 border-teal-400/80 rounded-xl text-xs sm:text-sm font-black text-teal-950 focus:outline-none focus:border-teal-600 focus:bg-white shadow-2xs transition-all placeholder:text-slate-400"
+                                className="w-full px-4 py-3 bg-teal-50/80 border-2 border-teal-400 rounded-2xl text-sm sm:text-base font-black text-teal-950 focus:outline-none focus:border-teal-600 focus:bg-white shadow-2xs transition-all placeholder:text-slate-400"
                               />
-                              <p className="text-[10px] text-teal-700 font-medium flex items-center gap-1">
+                              <p className="text-xs sm:text-sm text-teal-800 font-medium flex items-center gap-1.5">
                                 💡 Thầy/Cô gõ tự do tên Lớp/Đối tượng tại đây — hệ thống tự động nhận diện và cập nhật đúng số liệu.
                               </p>
                             </div>
@@ -787,16 +787,16 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                               onChange={(e) => handleFieldChange(col.id, e.target.value === '' ? '' : Number(e.target.value))}
                               required={col.required}
                               placeholder={`Nhập ${col.subName || col.name}...`}
-                              className="w-full px-3 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                              className="w-full px-4 py-2.5 sm:py-3 bg-slate-50/50 focus:bg-white border-2 border-slate-200 focus:border-teal-500 rounded-2xl text-sm sm:text-base font-bold text-slate-900 focus:outline-none shadow-2xs transition-all"
                             />
                           ) : isTextArea ? (
                             <textarea
-                              rows={2}
+                              rows={2.5}
                               value={currentVal}
                               onChange={(e) => handleFieldChange(col.id, e.target.value)}
                               required={col.required}
                               placeholder={`Nhập ${col.name}...`}
-                              className="w-full px-3 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                              className="w-full px-4 py-2.5 sm:py-3 bg-slate-50/50 focus:bg-white border-2 border-slate-200 focus:border-teal-500 rounded-2xl text-sm sm:text-base font-medium text-slate-900 focus:outline-none shadow-2xs transition-all"
                             />
                           ) : (
                             <input
@@ -805,7 +805,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                               onChange={(e) => handleFieldChange(col.id, e.target.value)}
                               required={col.required}
                               placeholder={`Nhập ${col.subName || col.name}...`}
-                              className="w-full px-3 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-normal text-slate-800 focus:outline-none focus:border-teal-500 shadow-2xs"
+                              className="w-full px-4 py-2.5 sm:py-3 bg-slate-50/50 focus:bg-white border-2 border-slate-200 focus:border-teal-500 rounded-2xl text-sm sm:text-base font-medium text-slate-900 focus:outline-none shadow-2xs transition-all"
                             />
                           )}
                         </div>
@@ -819,9 +819,9 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                             return (
                               <div
                                 key={`standalone_blk_${bIdx}`}
-                                className="bg-slate-50/80 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3"
+                                className="bg-slate-50/80 rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3.5"
                               >
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                   {block.columns.map((col) => renderFormField(col, false))}
                                 </div>
                               </div>
@@ -831,17 +831,17 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                           return (
                             <div
                               key={`merged_blk_${block.groupName}_${bIdx}`}
-                              className="bg-teal-50/40 rounded-2xl border-2 border-teal-200/90 overflow-hidden shadow-2xs"
+                              className="bg-teal-50/40 rounded-2xl border-2 border-teal-200 overflow-hidden shadow-2xs"
                             >
-                              <div className="px-4 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-black text-xs sm:text-sm flex items-center justify-between">
+                              <div className="px-4 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-black text-xs sm:text-sm flex items-center justify-between">
                                 <span className="flex items-center gap-1.5">
                                   <span>🏷️ {block.groupName}</span>
                                 </span>
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
+                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
                                   {block.columns.length} cột số liệu
                                 </span>
                               </div>
-                              <div className="p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-white">
+                              <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white">
                                 {block.columns.map((col) => renderFormField(col, true))}
                               </div>
                             </div>
@@ -854,23 +854,23 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
 
                 {/* Submit buttons */}
                 <div className="pt-2 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     {/* Nút 1: Lưu & Thêm Mới */}
                     <button
                       type="button"
                       onClick={() => handleSubmit(undefined, true)}
                       disabled={submitting}
-                      className="py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-sm shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
+                      className="py-3.5 px-5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-base shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
                       title="Lưu số liệu đối tượng này và giữ form để nhập tiếp đối tượng tiếp theo"
                     >
                       {submitting && submittingAction === 'save_new' ? (
                         <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <RefreshCw className="w-5 h-5 animate-spin" />
                           <span>Đang lưu...</span>
                         </>
                       ) : (
                         <>
-                          <PlusCircle className="w-4 h-4" />
+                          <PlusCircle className="w-5 h-5" />
                           <span>Lưu & Thêm Mới</span>
                         </>
                       )}
@@ -880,23 +880,23 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="py-3 px-4 rounded-2xl bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-xs sm:text-sm shadow-md shadow-teal-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
+                      className="py-3.5 px-5 rounded-2xl bg-gradient-to-r from-teal-600 via-teal-500 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-xs sm:text-base shadow-md shadow-teal-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 active:scale-[0.99]"
                     >
                       {submitting && submittingAction !== 'save_new' ? (
                         <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <RefreshCw className="w-5 h-5 animate-spin" />
                           <span>Đang gửi...</span>
                         </>
                       ) : (
                         <>
-                          <Send className="w-4 h-4" />
+                          <Send className="w-5 h-5" />
                           <span>Gửi & Hoàn Thành</span>
                         </>
                       )}
                     </button>
                   </div>
 
-                  <p className="text-center text-[11px] text-slate-400 font-medium">
+                  <p className="text-center text-xs sm:text-sm text-slate-500 font-medium">
                     🔒 Số liệu tự động đồng bộ ngay vào file Excel tổng hợp của trường.
                   </p>
                 </div>
