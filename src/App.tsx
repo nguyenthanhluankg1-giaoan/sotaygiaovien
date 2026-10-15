@@ -61,6 +61,7 @@ import { KhdhModule } from './components/KhdhModule';
 import { MeetingsModule } from './components/MeetingsModule';
 import { ReportsModule } from './components/ReportsModule';
 import { SharedReportFormView } from './components/SharedReportFormView';
+import { SharedExcelCollabView } from './components/SharedExcelCollabView';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getSavedSessionUser());
@@ -85,10 +86,20 @@ export default function App() {
       return null;
     }
   });
+  const [collabSheetId, setCollabSheetId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('excelId') || params.get('excel') || params.get('collabId') || params.get('collabSheet') || params.get('sheetId') || null;
+    } catch {
+      return null;
+    }
+  });
 
   // References to guarantee no race conditions across browsers
   const cloudLoadedUserRef = useRef<string | null>(null);
   const isRemoteSyncingRef = useRef<boolean>(false);
+  const lastSavedStateRef = useRef<string>('');
 
   // Initial load of users & state from Firestore
   useEffect(() => {
@@ -199,12 +210,7 @@ export default function App() {
             };
 
             saveStoredState(savedUser, reconciledState);
-            saveAppStateToFirestore(wsKey, reconciledState, {
-              userId: savedUser?.id || 'guest',
-              teacherName: savedUser?.name || 'Giáo viên',
-              role: savedUser?.role || 'guest'
-            }).catch(console.warn);
-
+            lastSavedStateRef.current = JSON.stringify(reconciledState);
             return reconciledState;
           });
         }
@@ -250,6 +256,7 @@ export default function App() {
           ...remoteState,
           currentPage: prev.currentPage
         }));
+        lastSavedStateRef.current = JSON.stringify(remoteState);
         saveStoredState(currentUser, remoteState);
         const syncTime = new Date();
         setSavedTime(
@@ -261,7 +268,7 @@ export default function App() {
     return () => unsubscribe();
   }, [currentUser?.id]);
 
-  // Ultra-fast auto-sync whenever state changes: immediate local storage + 150ms background Cloud Firestore save
+  // Ultra-fast auto-sync whenever state changes: immediate local storage + background Cloud Firestore save
   useEffect(() => {
     saveStoredState(currentUser, state);
 
@@ -271,6 +278,12 @@ export default function App() {
     // Do NOT echo-save when the state update came from remote onSnapshot
     if (isRemoteSyncingRef.current) {
       isRemoteSyncingRef.current = false;
+      return;
+    }
+
+    // Only save to cloud if state has actually changed
+    const stateStr = JSON.stringify(state);
+    if (lastSavedStateRef.current && stateStr === lastSavedStateRef.current) {
       return;
     }
 
@@ -284,6 +297,7 @@ export default function App() {
           role: currentUser?.role || 'guest'
         });
         if (ok) {
+          lastSavedStateRef.current = stateStr;
           const syncTime = new Date();
           setSavedTime(
             syncTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -429,10 +443,39 @@ export default function App() {
     setDbConnected(true);
   };
 
-  // Check URL parameters for direct public access (shared report form, student tug game, etc.)
+  // Check URL parameters for direct public access (shared report form, collaborative multi-sheet excel, student tug game, etc.)
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const urlReportId = urlParams?.get('reportId') || urlParams?.get('report') || urlParams?.get('report_id');
   const activeSharedReportId = sharedReportId || urlReportId;
+
+  const urlExcelId = urlParams?.get('excelId') || urlParams?.get('excel') || urlParams?.get('collabId') || urlParams?.get('collabSheet') || urlParams?.get('sheetId');
+  const activeCollabSheetId = collabSheetId || urlExcelId;
+
+  // 0. PUBLIC COLLABORATIVE MULTI-SHEET EXCEL VIEW: Direct access without requiring login!
+  if (activeCollabSheetId) {
+    return (
+      <SharedExcelCollabView
+        sheetId={activeCollabSheetId}
+        onBackToApp={() => {
+          setCollabSheetId(null);
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('excelId');
+            url.searchParams.delete('excel');
+            url.searchParams.delete('collabId');
+            url.searchParams.delete('collabSheet');
+            url.searchParams.delete('sheetId');
+            url.searchParams.delete('page');
+            window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+          } catch {
+            try {
+              window.history.replaceState({}, '', window.location.pathname);
+            } catch {}
+          }
+        }}
+      />
+    );
+  }
 
   // 1. PUBLIC SHARED REPORT FORM: Direct access without requiring login!
   if (activeSharedReportId) {

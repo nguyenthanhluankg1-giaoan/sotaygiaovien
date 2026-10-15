@@ -1,8 +1,8 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeFirestore, getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDoc, setDoc, disableNetwork } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import fileConfig from '../firebase-applet-config.json';
-import { checkAndMarkQuotaExceeded } from './utils/quotaHelper';
+import { checkAndMarkQuotaExceeded, isFirestoreQuotaExceeded, onQuotaExceeded } from './utils/quotaHelper';
 
 // Support both embedded json config and Vercel/Vite environment variables
 const env = (import.meta as any).env || {};
@@ -32,6 +32,16 @@ const targetDbId =
 export const db = getFirestore(app, targetDbId);
 export const auth = getAuth(app);
 
+// Automatically disable Firestore network attempts when daily quota is reached
+// This prevents repetitive resource-exhausted network rejections and backoff warnings
+if (isFirestoreQuotaExceeded()) {
+  disableNetwork(db).catch(() => {});
+}
+
+onQuotaExceeded(() => {
+  disableNetwork(db).catch(() => {});
+});
+
 /**
  * Kiểm tra kết nối trực tiếp đến Cloud Firestore (hỗ trợ cả Vercel và Google Studio)
  */
@@ -41,6 +51,14 @@ export async function testFirestoreLiveConnection(): Promise<{
   databaseId?: string;
   error?: string;
 }> {
+  if (isFirestoreQuotaExceeded()) {
+    return {
+      connected: false,
+      latencyMs: 0,
+      databaseId: resolvedFirebaseConfig.firestoreDatabaseId,
+      error: 'Daily Firestore quota limit reached. Running in local storage mode.'
+    };
+  }
   const start = Date.now();
   try {
     const testDoc = doc(db, 'system', 'connection_test');

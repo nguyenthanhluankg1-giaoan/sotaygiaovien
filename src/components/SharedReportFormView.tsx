@@ -618,75 +618,9 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                 </div>
               </div>
 
-              {/* Step 1 Card: Quick Object Selection Dropdown (STT / Lớp / Tên) */}
-              <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs sm:text-sm font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
-                    <User className="w-4 h-4 text-teal-600" />
-                    <span>1. CHỌN NHANH LỚP / ĐỐI TƯỢNG (TÙY CHỌN)</span>
-                  </span>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                    Tùy chọn
-                  </span>
-                </div>
-
-                <div className="space-y-3.5">
-                  <div className="space-y-1.5">
-                    <label className="text-xs sm:text-sm font-bold text-slate-800">
-                      Chọn Lớp / STT để nạp nhanh số liệu (nếu cần):
-                    </label>
-                    <div className="relative">
-                      <select
-                        value={selectedRowId}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === 'new_row') {
-                            handleStartNewRow();
-                          } else if (val) {
-                            handleSelectRow(val);
-                          } else {
-                            setSelectedRowId('');
-                          }
-                        }}
-                        className="w-full px-4 py-3 pr-10 bg-slate-50 border-2 border-slate-300 rounded-2xl text-xs sm:text-base font-bold text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-all shadow-2xs appearance-none cursor-pointer"
-                      >
-                        <option value="">-- Bấm vào đây để chọn Lớp từ danh sách (hoặc gõ tự do ở Mục 2) --</option>
-                        {report.rows.map((r, idx) => {
-                          const title = idCol && r[idCol.id] ? String(r[idCol.id]) : `STT ${idx + 1}`;
-                          const isDone = r._isComplete;
-                          return (
-                            <option key={r.id} value={r.id}>
-                              {isDone ? '✅' : '⌛'} {title} {isDone ? '(Đã có số liệu)' : '(Chưa có số liệu)'}
-                            </option>
-                          );
-                        })}
-                        <option value="new_row">✨ + Thêm đối tượng mới ngoài danh sách</option>
-                      </select>
-                      <ChevronDown className="w-5 h-5 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                    <p className="text-xs sm:text-sm text-slate-600 font-medium">
-                      💡 Thầy/Cô có thể chọn Lớp tại đây để nạp nhanh dữ liệu, hoặc gõ trực tiếp tên Lớp/Đối tượng ở Mục 2 bên phải.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5 pt-1">
-                    <label className="text-xs sm:text-sm font-bold text-slate-800">
-                      Họ và tên người gửi / GV phụ trách (Tùy chọn):
-                    </label>
-                    <input
-                      type="text"
-                      value={submitterName}
-                      onChange={(e) => setSubmitterName(e.target.value)}
-                      placeholder="Nhập tên Giáo viên / Người nộp..."
-                      className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs sm:text-base font-medium text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white shadow-2xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
             </div>
 
-            {/* RIGHT COLUMN (lg:col-span-7): Step 2 Form Inputs + Action Buttons */}
+            {/* RIGHT COLUMN (lg:col-span-7): Form Inputs + Action Buttons */}
             <div className="lg:col-span-7 space-y-4">
               
               <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7 shadow-sm space-y-5">
@@ -728,7 +662,7 @@ export const SharedReportFormView: React.FC<SharedReportFormViewProps> = ({
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <span className="text-xs sm:text-sm font-black uppercase text-teal-900 tracking-wider flex items-center gap-2">
                       <ListOrdered className="w-4 h-4 text-teal-600" />
-                      <span>2. CÁC SỐ LIỆU CẦN ĐIỀN</span>
+                      <span>CÁC SỐ LIỆU CẦN ĐIỀN</span>
                     </span>
                     <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-50 text-teal-800">
                       {inputColumns.length} trường dữ liệu

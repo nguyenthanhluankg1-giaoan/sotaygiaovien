@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { matchPpctLesson, removeVietnameseTones, extractWeekFromText, extractPeriodsFromText, normalizeSubject, getPeriodOfWeekNumber, formatTopicWithWeekPeriod } from './src/utils/ppctMatcher';
 import { defaultPpctList } from './src/data/defaultData';
+import { collabSheetRouter } from './src/server/collabSheetRouter';
 
 dotenv.config();
 
@@ -17,6 +18,9 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
+
+// Collaborative Multi-Sheet Excel Router
+app.use('/api/collaborative-sheets', collabSheetRouter);
 
 // Initialize Google Gemini API
 const apiKey = process.env.GEMINI_API_KEY;

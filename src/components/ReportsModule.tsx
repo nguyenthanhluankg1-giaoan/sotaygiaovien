@@ -37,13 +37,14 @@ import {
   PlusCircle,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Users
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import { DEFAULT_URGENT_REPORTS } from '../utils/helpers';
-import { buildPublicShareUrl } from '../utils/urlHelper';
+import { buildPublicShareUrl, buildPublicCollabSheetUrl } from '../utils/urlHelper';
 import {
   AppState,
   UserAccount,
@@ -160,6 +161,209 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const collabFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Collaborative Multi-Sheet Excel State
+  const [collabWorkbooks, setCollabWorkbooks] = useState<any[]>([]);
+  const [isLoadingCollab, setIsLoadingCollab] = useState<boolean>(false);
+  const [isCreatingCollab, setIsCreatingCollab] = useState<boolean>(false);
+  const [createdCollabWorkbook, setCreatedCollabWorkbook] = useState<any | null>(null);
+  const [isCollabShareModalOpen, setIsCollabShareModalOpen] = useState<boolean>(false);
+  const [isCollabListModalOpen, setIsCollabListModalOpen] = useState<boolean>(false);
+  const [collabQrCodeUrl, setCollabQrCodeUrl] = useState<string>('');
+  const [copiedCollabLink, setCopiedCollabLink] = useState<boolean>(false);
+  const [copiedCollabMessage, setCopiedCollabMessage] = useState<boolean>(false);
+
+  // Fetch collaborative spreadsheets
+  const fetchCollabWorkbooks = async () => {
+    setIsLoadingCollab(true);
+    try {
+      const res = await fetch('/api/collaborative-sheets');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.workbooks)) {
+          setCollabWorkbooks(data.workbooks);
+        }
+      }
+    } catch (e) {
+      console.warn('Fetch collab sheets error:', e);
+    } finally {
+      setIsLoadingCollab(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCollabWorkbooks();
+  }, []);
+
+  // Update QR Code when createdCollabWorkbook changes
+  useEffect(() => {
+    if (createdCollabWorkbook?.id) {
+      const shareUrl = buildPublicCollabSheetUrl(createdCollabWorkbook.id);
+      QRCode.toDataURL(shareUrl, {
+        width: 320,
+        margin: 2,
+        color: { dark: '#059669', light: '#ffffff' }
+      })
+        .then((url) => setCollabQrCodeUrl(url))
+        .catch(() => {
+          setCollabQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(shareUrl)}`);
+        });
+    }
+  }, [createdCollabWorkbook?.id]);
+
+  // Create Collaborative Multi-Sheet Workbook from file and parsed workbook
+  const handleCreateCollabWorkbook = async (file: File, wb: XLSX.WorkBook, customTitle?: string) => {
+    setIsCreatingCollab(true);
+    try {
+      const sheetsData: Record<string, { name: string; headers: string[]; rows: any[] }> = {};
+      const sheetNames = wb.SheetNames;
+
+      for (const sName of sheetNames) {
+        const ws = wb.Sheets[sName];
+        if (!ws) continue;
+        const rawAoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (rawAoa.length === 0) {
+          sheetsData[sName] = { name: sName, headers: ['Cột 1'], rows: [] };
+          continue;
+        }
+
+        // Header detection (first row with >= 2 non-empty values)
+        let headerRowIndex = 0;
+        for (let i = 0; i < Math.min(rawAoa.length, 10); i++) {
+          const nonEmpties = rawAoa[i].filter((c: any) => c !== undefined && c !== null && String(c).trim() !== '');
+          if (nonEmpties.length >= 2) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+
+        const headers = (rawAoa[headerRowIndex] || []).map((h: any, idx: number) => {
+          const str = String(h || '').trim();
+          return str || `Cột ${idx + 1}`;
+        });
+
+        const rows: any[] = [];
+        for (let r = headerRowIndex + 1; r < rawAoa.length; r++) {
+          const rowObj: Record<string, any> = { id: `row_${r}` };
+          const rowValues = rawAoa[r] || [];
+          let hasContent = false;
+          headers.forEach((_h: any, cIdx: number) => {
+            const val = rowValues[cIdx] !== undefined && rowValues[cIdx] !== null ? String(rowValues[cIdx]).trim() : '';
+            rowObj[`col_${cIdx}`] = val;
+            if (val !== '') hasContent = true;
+          });
+          if (hasContent || rows.length < 50) {
+            rows.push(rowObj);
+          }
+        }
+
+        sheetsData[sName] = {
+          name: sName,
+          headers,
+          rows
+        };
+      }
+
+      const title = (customTitle && customTitle.trim()) || file.name.replace(/\.[^/.]+$/, '').replace(/[_–-]/g, ' ') || 'Bảng tính Excel cộng tác';
+
+      const res = await fetch('/api/collaborative-sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          fileName: file.name,
+          creatorName: currentUser?.name || 'Giáo viên',
+          sheetNames,
+          sheets: sheetsData
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.workbook) {
+        try {
+          localStorage.setItem(`collab_sheet_backup_${data.workbook.id}`, JSON.stringify(data.workbook));
+        } catch {}
+
+        setCreatedCollabWorkbook(data.workbook);
+        setIsCollabShareModalOpen(true);
+        setIsUploadModalOpen(false);
+        fetchCollabWorkbooks();
+        showToast('🎉 Đã tạo thành công Bảng tính Excel cộng tác toàn bộ các sheet!');
+        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+      } else {
+        throw new Error(data.error || 'Không thể tạo bảng tính cộng tác');
+      }
+    } catch (err: any) {
+      console.error('Error creating collab workbook:', err);
+      alert('Không thể tạo Bảng tính cộng tác: ' + (err?.message || 'Lỗi'));
+    } finally {
+      setIsCreatingCollab(false);
+    }
+  };
+
+  // Direct upload handler for Collaborative Multi-Sheet Excel
+  const handleCollabDirectFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      await handleCreateCollabWorkbook(file, wb);
+    } catch (err: any) {
+      alert('Không thể đọc file Excel: ' + (err?.message || 'Vui lòng kiểm tra lại định dạng file'));
+    } finally {
+      if (collabFileInputRef.current) {
+        collabFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Delete Collaborative Workbook
+  const handleDeleteCollabWorkbook = async (id: string, title: string) => {
+    if (!window.confirm(`Thầy/Cô có chắc chắn muốn xóa bảng tính cộng tác "${title}" không?`)) return;
+    try {
+      const res = await fetch(`/api/collaborative-sheets/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast(`Đã xóa bảng tính "${title}"!`);
+        fetchCollabWorkbooks();
+        if (createdCollabWorkbook?.id === id) {
+          setCreatedCollabWorkbook(null);
+          setIsCollabShareModalOpen(false);
+        }
+      }
+    } catch (e: any) {
+      alert('Lỗi xóa bảng tính: ' + (e?.message || 'Lỗi'));
+    }
+  };
+
+  // Open Collaborative Sheet
+  const handleOpenCollabSheet = (sheetId: string) => {
+    window.location.href = buildPublicCollabSheetUrl(sheetId);
+  };
+
+  // Copy Collab Link
+  const handleCopyCollabLink = async (sheetId: string) => {
+    const url = buildPublicCollabSheetUrl(sheetId);
+    await copyTextToClipboard(url);
+    setCopiedCollabLink(true);
+    showToast('📋 Đã sao chép liên kết bảng tính Excel cộng tác!');
+    setTimeout(() => setCopiedCollabLink(false), 2000);
+  };
+
+  // Copy Collab Zalo Message
+  const handleCopyCollabZaloMessage = async (wb: any) => {
+    const url = buildPublicCollabSheetUrl(wb.id);
+    const msg = `📊 [BẢNG TÍNH EXCEL CỘNG TÁC] ${wb.title}\n` +
+      `File: ${wb.fileName} (${wb.sheetNames?.length || 1} Sheets)\n` +
+      `Kính gửi quý Thầy/Cô bấm vào đường link sau để quan sát đầy đủ các Sheet và nhập số liệu trực tiếp:\n${url}\n` +
+      `⚡ Không cần đăng nhập tài khoản. Khi có người đang nhập ô nào, hệ thống sẽ BÁO ĐỎ KHÓA Ô ĐÓ để tránh trùng lặp!`;
+    await copyTextToClipboard(msg);
+    setCopiedCollabMessage(true);
+    showToast('💬 Đã sao chép tin nhắn Zalo!');
+    setTimeout(() => setCopiedCollabMessage(false), 2000);
+  };
 
   // Current selected report
   const currentReport = (state.urgentReports || []).find((r) => r.id === selectedReportId) || (state.urgentReports || [])[0] || null;
@@ -1012,6 +1216,42 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            <input
+              type="file"
+              ref={collabFileInputRef}
+              onChange={handleCollabDirectFileSelect}
+              accept=".xlsx, .xls, .csv"
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={() => collabFileInputRef.current?.click()}
+              className="px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs sm:text-sm shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95 border border-emerald-400"
+              title="Tải file Excel lên để chia sẻ toàn bộ các Sheet và nhập dữ liệu trực tiếp, chống trùng lặp ô màu đỏ"
+            >
+              <Sparkles className="w-4 h-4 text-white animate-pulse" />
+              <span>📁 Chia Sẻ Toàn Bộ Sheet Excel (Cộng tác ô đỏ)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                fetchCollabWorkbooks();
+                setIsCollabListModalOpen(true);
+              }}
+              className="px-3.5 py-2.5 rounded-2xl bg-teal-900/60 hover:bg-teal-900/90 text-teal-100 font-bold text-xs sm:text-sm shadow-sm flex items-center gap-1.5 cursor-pointer transition-all border border-teal-400/30"
+              title="Xem danh sách các bảng tính Excel cộng tác đã chia sẻ"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-teal-300" />
+              <span>Bảng Tính Đã Chia Sẻ</span>
+              {collabWorkbooks.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-400 text-teal-950 text-[10px] font-black">
+                  {collabWorkbooks.length}
+                </span>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -1875,7 +2115,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                   <div className="flex items-center gap-2">
                     <FileSpreadsheet className="w-4 h-4 text-teal-700" />
                     <span className="font-bold text-teal-900">{uploadedFile?.name}</span>
-                    <span className="text-slate-500 font-medium">({wizardRows.length} dòng, {wizardColumns.length} cột)</span>
+                    <span className="text-slate-500 font-medium">({wizardRows.length} dòng, {wizardColumns.length} cột, {wizardSheetNames.length} sheets)</span>
                   </div>
                   <button
                     type="button"
@@ -1887,6 +2127,51 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                   >
                     Đổi file khác
                   </button>
+                </div>
+
+                {/* CHOICE 1: MULTI-SHEET COLLABORATIVE EXCEL (Requested by user) */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-lg space-y-3 border border-emerald-400">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white font-black text-[10px] uppercase tracking-wide">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        <span>CHỨC NĂNG MỚI: CỘNG TÁC TOÀN BỘ CÁC SHEET</span>
+                      </div>
+                      <h4 className="text-base sm:text-lg font-black tracking-tight">
+                        Chia Sẻ Bảng Tính Excel Toàn Bộ {wizardSheetNames.length} Sheet (Chống Trùng Ô Đỏ)
+                      </h4>
+                      <p className="text-xs text-emerald-100 leading-relaxed font-medium">
+                        Hiển thị đầy đủ tất cả các sheet trong file Excel. Ai có liên kết đều có thể vào xem và nhập dữ liệu trực tiếp mà <strong>không cần đăng nhập tài khoản</strong>. Khi có người đang nhập ô nào, ô đó sẽ <strong>báo màu đỏ khóa</strong> tránh nhập đè!
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      disabled={isCreatingCollab}
+                      onClick={() => handleCreateCollabWorkbook(uploadedFile!, parsedWorkbook!, wizardTitle)}
+                      className="w-full py-3 px-4 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-60"
+                    >
+                      {isCreatingCollab ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                          <span>Đang nạp toàn bộ các sheet & tạo link...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-emerald-600" />
+                          <span>🚀 Tạo & Chia Sẻ Link Toàn Bộ {wizardSheetNames.length} Sheet Ngay</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 py-1 text-slate-400 text-xs font-bold">
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <span>HOẶC TẠO FORM BÁO CÁO TỪNG MỤC DƯỚI ĐÂY</span>
+                  <div className="flex-1 h-px bg-slate-200" />
                 </div>
 
                 {/* Sheet Selector if multiple sheets */}
@@ -2729,6 +3014,302 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                 <span>Xóa Dòng Này</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 6: SHARE COLLABORATIVE MULTI-SHEET EXCEL (New Feature)   */}
+      {/* ============================================================== */}
+      {isCollabShareModalOpen && createdCollabWorkbook && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-emerald-300 w-full max-w-lg my-6 p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                    Chia Sẻ Bảng Tính Excel Cộng Tác
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Hiển thị trọn vẹn toàn bộ các sheet • Chống trùng lặp ô đỏ
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCollabShareModalOpen(false)}
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Workbook Info Card */}
+            <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-2 text-xs">
+              <div className="flex items-center justify-between font-bold text-emerald-950">
+                <span className="truncate text-sm font-black">{createdCollabWorkbook.title}</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 text-[10px] font-black shrink-0">
+                  {createdCollabWorkbook.sheetNames?.length || 1} Sheets
+                </span>
+              </div>
+              <p className="text-emerald-800 text-[11px] leading-relaxed">
+                🟢 <strong>Không cần đăng nhập:</strong> Bất kỳ ai mở liên kết này đều có quyền quan sát và nhập dữ liệu trực tiếp vào các sheet. Khi có người đang nhập ô nào, ô đó sẽ <strong>báo màu đỏ có người nhập</strong> để tránh trùng lặp.
+              </p>
+            </div>
+
+            {/* QR Code */}
+            {collabQrCodeUrl && (
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center justify-center space-y-2">
+                <img
+                  src={collabQrCodeUrl}
+                  alt="Mã QR Bảng tính Excel"
+                  className="w-44 h-44 rounded-xl shadow-xs border border-white"
+                />
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Quét mã QR bằng Camera điện thoại để vào nhập dữ liệu
+                </p>
+              </div>
+            )}
+
+            {/* Public Link Box */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-slate-700">Đường link chia sẻ trực tiếp:</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={buildPublicCollabSheetUrl(createdCollabWorkbook.id)}
+                  className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800 select-all outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCopyCollabLink(createdCollabWorkbook.id)}
+                  className={`px-4 py-2.5 rounded-xl font-black text-xs flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
+                    copiedCollabLink
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-teal-600 hover:bg-teal-700 text-white'
+                  }`}
+                >
+                  {copiedCollabLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedCollabLink ? 'Đã chép!' : 'Sao chép'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handleCopyCollabZaloMessage(createdCollabWorkbook)}
+                className="w-full py-2.5 px-4 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
+              >
+                <Send className="w-4 h-4 text-blue-600" />
+                <span>{copiedCollabMessage ? 'Đã sao chép tin nhắn Zalo!' : 'Sao chép tin nhắn mẫu gửi nhóm Zalo'}</span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenCollabSheet(createdCollabWorkbook.id)}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Mở Bảng Tính Ngay</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = `/api/collaborative-sheets/${createdCollabWorkbook.id}/export`;
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-slate-600" />
+                  <span>Tải File Excel (.xlsx)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 7: COLLABORATIVE WORKBOOKS LIST MANAGER                  */}
+      {/* ============================================================== */}
+      {isCollabListModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-teal-200 w-full max-w-3xl my-6 p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">
+                    Bảng Tính Excel Đã Chia Sẻ Trực Tuyến
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Cộng tác thời gian thực • Hiển thị đầy đủ mọi sheet • Khóa ô màu đỏ tránh trùng lặp
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCollabListModalOpen(false)}
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Top action */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs font-bold text-slate-600">
+                Tổng cộng: <strong className="text-emerald-700">{collabWorkbooks.length}</strong> bảng tính cộng tác
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  collabFileInputRef.current?.click();
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Tải Thêm File Excel Mới</span>
+              </button>
+            </div>
+
+            {/* List */}
+            {isLoadingCollab ? (
+              <div className="p-8 text-center text-slate-500 space-y-2">
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-teal-600" />
+                <p className="text-xs font-bold">Đang tải danh sách bảng tính...</p>
+              </div>
+            ) : collabWorkbooks.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-3">
+                <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto" />
+                <div>
+                  <h4 className="text-sm font-black text-slate-700">Chưa có file Excel cộng tác nào</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Bấm vào nút bên dưới để chọn file Excel mẫu (.xlsx, .xls) và chia sẻ toàn bộ các sheet cho mọi người nhập dữ liệu.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => collabFileInputRef.current?.click()}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Chọn file Excel tải lên ngay</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                {collabWorkbooks.map((wb) => (
+                  <div
+                    key={wb.id}
+                    className="p-4 bg-white rounded-2xl border border-slate-200 hover:border-emerald-300 hover:shadow-xs transition-all space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-black text-slate-900 truncate">
+                            {wb.title}
+                          </h4>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-300">
+                            {wb.sheetNames?.length || 1} Sheets
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black border border-indigo-200 flex items-center gap-1">
+                            <Users className="w-3 h-3 text-indigo-600" />
+                            <span>{wb.contributorsCount || 0} người đã nhập</span>
+                          </span>
+                          {wb.onlineCount !== undefined && wb.onlineCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black border border-emerald-300 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>{wb.onlineCount} online</span>
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium">
+                            {wb.totalRows || 0} dòng
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          File: <strong>{wb.fileName}</strong> • Tạo bởi: <strong>{wb.creatorName}</strong> • Cập nhật: {new Date(wb.updatedAt).toLocaleTimeString('vi-VN')} {new Date(wb.updatedAt).toLocaleDateString('vi-VN')}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCollabSheet(wb.id)}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title="Xem trực tiếp dữ liệu và theo dõi người dùng đang nhập"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Xem trực tiếp & Nhập</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreatedCollabWorkbook(wb);
+                            setIsCollabShareModalOpen(true);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                          title="Lấy link & mã QR chia sẻ"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Chia sẻ</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.location.href = `/api/collaborative-sheets/${wb.id}/export`;
+                          }}
+                          className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                          title="Tải file Excel cập nhật về máy"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCollabWorkbook(wb.id, wb.title)}
+                          className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 cursor-pointer"
+                          title="Xóa bảng tính cộng tác này"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick share link bar */}
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                      <span className="text-[11px] font-bold text-slate-500 shrink-0">Link:</span>
+                      <input
+                        type="text"
+                        readOnly
+                        value={buildPublicCollabSheetUrl(wb.id)}
+                        className="flex-1 bg-transparent text-slate-700 text-[11px] font-medium outline-none truncate select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCollabLink(wb.id)}
+                        className="text-teal-700 hover:text-teal-900 font-bold text-[11px] cursor-pointer shrink-0"
+                      >
+                        Sao chép
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

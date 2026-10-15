@@ -19,3 +19,11 @@ export function buildPublicShareUrl(page: string, reportId: string): string {
   const pathname = window.location.pathname;
   return `${origin}${pathname}?page=${encodeURIComponent(page)}&reportId=${encodeURIComponent(reportId)}`;
 }
+
+export function buildPublicCollabSheetUrl(sheetId: string): string {
+  if (typeof window === 'undefined') return '';
+  const origin = getPublicShareOrigin();
+  const pathname = window.location.pathname;
+  return `${origin}${pathname}?excelId=${encodeURIComponent(sheetId)}`;
+}
+

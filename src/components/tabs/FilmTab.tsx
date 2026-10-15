@@ -49,6 +49,7 @@ import { uid } from '../../utils/helpers';
 import { playCelebration, playBeep } from '../../utils/audio';
 import { doc, onSnapshot, setDoc, getDoc, collection, getDocs, query } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { checkAndMarkQuotaExceeded, isFirestoreQuotaExceeded } from '../../services/dbService';
 import { CameraGestureDualZone } from './CameraGestureDualZone';
 
 // Bulletproof helper to sanitize any Firestore payload (removes undefined values completely)
@@ -644,17 +645,19 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
 
       const targetDocId = activeRoomDocId || roomDocId;
 
+      if (isFirestoreQuotaExceeded()) return;
+
       // 1. Save to specific class room document
       const roomRef = doc(db, 'tug_of_war_rooms', targetDocId);
-      setDoc(roomRef, payload, { merge: true }).catch((err) =>
-        console.warn('Room sync broadcast error:', err)
-      );
+      setDoc(roomRef, payload, { merge: true }).catch((err) => {
+        checkAndMarkQuotaExceeded(err);
+      });
 
       // 2. ALWAYS also save to the primary active room document ('tug_room_active') for all updates (Teacher AND Students)
       const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
-      setDoc(activeRoomRef, payload, { merge: true }).catch((err) =>
-        console.warn('Active room sync broadcast error:', err)
-      );
+      setDoc(activeRoomRef, payload, { merge: true }).catch((err) => {
+        checkAndMarkQuotaExceeded(err);
+      });
     } catch (e) {
       console.warn('Room sync broadcast error:', e);
     }
@@ -669,6 +672,11 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
     }
     setRedPin(newRed);
     setBluePin(newBlue);
+    if (isFirestoreQuotaExceeded()) {
+      setCopySuccessMsg(`🎲 Đã tạo bộ mã 3 số mới: Đỏ [${newRed}] - Xanh [${newBlue}]!`);
+      setTimeout(() => setCopySuccessMsg(null), 4000);
+      return;
+    }
     try {
       const payload = cleanPayload({
         redPin: newRed,
@@ -677,11 +685,13 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
         updatedBy: deviceTeam,
         lastUpdated: new Date().toISOString()
       });
-      const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
-      setDoc(roomRef, payload, { merge: true }).catch(console.warn);
+      if (!isFirestoreQuotaExceeded()) {
+        const roomRef = doc(db, 'tug_of_war_rooms', roomDocId);
+        setDoc(roomRef, payload, { merge: true }).catch(checkAndMarkQuotaExceeded);
 
-      const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
-      setDoc(activeRoomRef, payload, { merge: true }).catch(console.warn);
+        const activeRoomRef = doc(db, 'tug_of_war_rooms', 'tug_room_active');
+        setDoc(activeRoomRef, payload, { merge: true }).catch(checkAndMarkQuotaExceeded);
+      }
     } catch (e) {
       console.warn(e);
     }
@@ -800,6 +810,8 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
       }
     };
 
+    if (isFirestoreQuotaExceeded()) return;
+
     const currentListenRoomId = activeRoomDocId || roomDocId;
 
     // 1. Primary listener for target room
@@ -827,11 +839,15 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             matchQuestions: [],
             lastUpdated: new Date().toISOString()
           });
-          setDoc(roomRef, initPayload, { merge: true }).catch(console.warn);
-          setDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'), initPayload, { merge: true }).catch(console.warn);
+          if (!isFirestoreQuotaExceeded()) {
+            setDoc(roomRef, initPayload, { merge: true }).catch(checkAndMarkQuotaExceeded);
+            setDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'), initPayload, { merge: true }).catch(checkAndMarkQuotaExceeded);
+          }
         }
       },
-      (err) => console.warn('Firestore room sync warn:', err)
+      (err) => {
+        checkAndMarkQuotaExceeded(err);
+      }
     );
 
     // 2. Secondary fallback listener for active room
@@ -845,7 +861,9 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
             applyRoomData(snapshot.data());
           }
         },
-        (err) => console.warn('Active room sync fallback warn:', err)
+        (err) => {
+          checkAndMarkQuotaExceeded(err);
+        }
       );
     }
 
@@ -927,12 +945,12 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
           }
         }
       } catch (err) {
-        console.warn('Check current room error:', err);
+        checkAndMarkQuotaExceeded(err);
       }
     }
 
     // Check 3: Query active room safely
-    if (!matchedTeam) {
+    if (!matchedTeam && !isFirestoreQuotaExceeded()) {
       try {
         const activeSnap = await getDoc(doc(db, 'tug_of_war_rooms', 'tug_room_active'));
         if (activeSnap.exists()) {
@@ -948,12 +966,12 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
           }
         }
       } catch (err) {
-        console.warn('Check active room error:', err);
+        checkAndMarkQuotaExceeded(err);
       }
     }
 
     // Check 4: Query all rooms collection safely
-    if (!matchedTeam) {
+    if (!matchedTeam && !isFirestoreQuotaExceeded()) {
       try {
         const roomsQuery = query(collection(db, 'tug_of_war_rooms'));
         const querySnap = await getDocs(roomsQuery);
@@ -972,7 +990,7 @@ export const FilmTab: React.FC<FilmTabProps> = ({ state, onUpdateState }) => {
           }
         });
       } catch (err) {
-        console.warn('Query rooms collection error:', err);
+        checkAndMarkQuotaExceeded(err);
       }
     }
 

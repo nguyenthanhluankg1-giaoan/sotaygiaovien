@@ -131,9 +131,14 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
 
     if (snapshot.empty) {
       console.log('No users found in Firestore. Seeding default accounts...');
-      // Seed default accounts to Firestore
-      for (const u of INITIAL_DEFAULT_USERS) {
-        await setDoc(doc(db, 'users', u.id), u);
+      if (!isFirestoreQuotaExceeded()) {
+        try {
+          for (const u of INITIAL_DEFAULT_USERS) {
+            await setDoc(doc(db, 'users', u.id), u);
+          }
+        } catch (e) {
+          checkAndMarkQuotaExceeded(e);
+        }
       }
       setLocalCachedUsers(INITIAL_DEFAULT_USERS);
       return INITIAL_DEFAULT_USERS;
@@ -148,7 +153,13 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
     const hasAdmin = list.some((u) => u.role === 'admin');
     if (!hasAdmin) {
       const adminAcc = INITIAL_DEFAULT_USERS[0];
-      await setDoc(doc(db, 'users', adminAcc.id), adminAcc);
+      if (!isFirestoreQuotaExceeded()) {
+        try {
+          await setDoc(doc(db, 'users', adminAcc.id), adminAcc);
+        } catch (e) {
+          checkAndMarkQuotaExceeded(e);
+        }
+      }
       list.unshift(adminAcc);
     }
 
@@ -172,19 +183,25 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
  */
 export async function saveUserToFirestore(user: UserAccount): Promise<boolean> {
   const path = `users/${user.id}`;
+  // Always update local cache
+  const currentList = getLocalCachedUsers();
+  const idx = currentList.findIndex((u) => u.id === user.id);
+  if (idx >= 0) {
+    currentList[idx] = user;
+  } else {
+    currentList.push(user);
+  }
+  setLocalCachedUsers(currentList);
+
+  if (isFirestoreQuotaExceeded()) {
+    return true;
+  }
+
   try {
     await setDoc(doc(db, 'users', user.id), user);
-    // Update local cache
-    const currentList = getLocalCachedUsers();
-    const idx = currentList.findIndex((u) => u.id === user.id);
-    if (idx >= 0) {
-      currentList[idx] = user;
-    } else {
-      currentList.push(user);
-    }
-    setLocalCachedUsers(currentList);
     return true;
   } catch (err: any) {
+    checkAndMarkQuotaExceeded(err);
     if (err?.code === 'unavailable' || err?.message?.includes('unavailable') || err?.message?.includes('offline')) {
       console.warn('Firestore unavailable, saved to local cache only.');
       return false;
@@ -360,6 +377,10 @@ export async function saveAppStateToFirestore(
   state: AppState,
   meta?: { userId?: string; teacherName?: string; role?: string }
 ): Promise<boolean> {
+  if (isFirestoreQuotaExceeded()) {
+    return false;
+  }
+
   const path = `workspaces/${key}`;
   const nowIso = new Date().toISOString();
   const userId = meta?.userId || state.ownerUserId || '';
@@ -909,6 +930,10 @@ export async function saveUrgentReportToFirestore(report: UrgentReportItem): Pro
     console.warn('Failed to cache urgent report in localStorage:', e);
   }
 
+  if (isFirestoreQuotaExceeded()) {
+    return true; // Local storage save succeeded
+  }
+
   try {
     const docRef = doc(db, 'urgent_reports', report.id);
     const sanitized = sanitizeFirestoreData({
@@ -964,14 +989,16 @@ export async function fetchUrgentReportFromFirestore(reportId: string): Promise<
   // Fallback 2: Check DEFAULT_URGENT_REPORTS (e.g. sample report BHYT)
   const defaultMatch = DEFAULT_URGENT_REPORTS.find((r) => r.id === reportId);
   if (defaultMatch) {
-    // Asynchronously seed it to Firestore so future reads hit cloud directly
-    try {
-      const docRef = doc(db, 'urgent_reports', defaultMatch.id);
-      setDoc(docRef, sanitizeFirestoreData({
-        ...defaultMatch,
-        updatedAt: new Date().toISOString()
-      })).catch(() => {});
-    } catch {}
+    // Asynchronously seed it to Firestore only if quota has not been exceeded
+    if (!isFirestoreQuotaExceeded()) {
+      try {
+        const docRef = doc(db, 'urgent_reports', defaultMatch.id);
+        setDoc(docRef, sanitizeFirestoreData({
+          ...defaultMatch,
+          updatedAt: new Date().toISOString()
+        })).catch(checkAndMarkQuotaExceeded);
+      } catch {}
+    }
     return defaultMatch;
   }
 
@@ -1078,6 +1105,84 @@ export async function deleteReportRowFromFirestore(reportId: string, rowId: stri
 }
 
 /**
+ * Local application helper for row matching and STT calculation
+ */
+export function applyReportRowLocally(
+  current: UrgentReportItem,
+  submittedRow: ReportRow,
+  submitterName?: string
+): UrgentReportItem {
+  const nowIso = new Date().toISOString();
+  const updatedRows = [...(current.rows || [])];
+
+  // Identify STT column and non-STT columns
+  const sttCol = current.columns.find((c) => c.id === 'col_stt' || c.name.trim().toLowerCase() === 'stt');
+  const nonSttCols = current.columns.filter((c) => c.id !== 'col_stt' && c.name.trim().toLowerCase() !== 'stt');
+
+  // Identify the main matching column (e.g. Lớp or Họ tên) excluding STT
+  const idCol = nonSttCols.find((c) => c.id === current.identifierColumnId || c.isIdentifier) ||
+    nonSttCols.find((c) => {
+      const n = (c.subName || c.name).toLowerCase();
+      return n.includes('lớp') || n.includes('họ tên') || n.includes('đơn vị') || n.includes('tên');
+    }) ||
+    nonSttCols[0] ||
+    current.columns[0];
+
+  let targetIndex = -1;
+
+  // Smart matching by identifier column value (e.g. "1A1", "1/1", "Lớp 1A1")
+  if (idCol && submittedRow[idCol.id] !== undefined && String(submittedRow[idCol.id]).trim() !== '') {
+    const normalizeStr = (s: string) => String(s).trim().toLowerCase().replace(/^lớp\s+/i, '').replace(/\s+/g, '');
+    const targetVal = normalizeStr(String(submittedRow[idCol.id]));
+
+    targetIndex = updatedRows.findIndex((r) => {
+      const rowVal = r[idCol.id] !== undefined && r[idCol.id] !== null ? normalizeStr(String(r[idCol.id])) : '';
+      return rowVal === targetVal && targetVal !== '';
+    });
+  }
+
+  // Secondary fallback search by row id
+  if (targetIndex === -1 && submittedRow.id && !submittedRow.id.startsWith('new_row_')) {
+    targetIndex = updatedRows.findIndex((r) => r.id === submittedRow.id);
+  }
+
+  if (targetIndex >= 0) {
+    // Update existing row safely in place without losing existing fields
+    updatedRows[targetIndex] = {
+      ...updatedRows[targetIndex],
+      ...submittedRow,
+      _submittedAt: nowIso,
+      _submittedBy: submitterName || updatedRows[targetIndex]._submittedBy || 'Giáo viên',
+      _isComplete: true
+    };
+  } else {
+    // Append as new row
+    const newId = `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    updatedRows.push({
+      ...submittedRow,
+      id: submittedRow.id && !submittedRow.id.startsWith('new_row_') ? submittedRow.id : newId,
+      _submittedAt: nowIso,
+      _submittedBy: submitterName || 'Giáo viên',
+      _isComplete: true
+    });
+  }
+
+  // Auto-compute sequential STT for all rows if STT column exists
+  if (sttCol) {
+    updatedRows.forEach((r, idx) => {
+      r[sttCol.id] = idx + 1;
+    });
+  }
+
+  return {
+    ...current,
+    rows: updatedRows,
+    submissionsCount: updatedRows.filter((r) => r._isComplete).length,
+    updatedAt: nowIso
+  };
+}
+
+/**
  * Submit / Update a single row in an Urgent Report from a shared public or internal form
  * Features automatic atomic identifier matching (Lớp / Họ tên) and concurrent submission safety via runTransaction
  */
@@ -1087,6 +1192,17 @@ export async function submitReportRowToFirestore(
   isNewRow: boolean,
   submitterName?: string
 ): Promise<{ success: boolean; report?: UrgentReportItem; error?: string }> {
+  // If quota already known to be exceeded, bypass cloud write directly to local storage
+  if (isFirestoreQuotaExceeded()) {
+    const current = await fetchUrgentReportFromFirestore(reportId);
+    if (!current) return { success: false, error: 'Không tìm thấy mẫu báo cáo trên hệ thống.' };
+    const updatedLocal = applyReportRowLocally(current, submittedRow, submitterName);
+    try {
+      localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(updatedLocal));
+    } catch (e) {}
+    return { success: true, report: updatedLocal };
+  }
+
   try {
     const docRef = doc(db, 'urgent_reports', reportId);
 
@@ -1111,75 +1227,7 @@ export async function submitReportRowToFirestore(
         throw new Error('Mẫu báo cáo này đã khóa nhận số liệu!');
       }
 
-      const nowIso = new Date().toISOString();
-      const updatedRows = [...(current.rows || [])];
-
-      // Identify STT column and non-STT columns
-      const sttCol = current.columns.find((c) => c.id === 'col_stt' || c.name.trim().toLowerCase() === 'stt');
-      const nonSttCols = current.columns.filter((c) => c.id !== 'col_stt' && c.name.trim().toLowerCase() !== 'stt');
-
-      // Identify the main matching column (e.g. Lớp or Họ tên) excluding STT
-      const idCol = nonSttCols.find((c) => c.id === current.identifierColumnId || c.isIdentifier) ||
-        nonSttCols.find((c) => {
-          const n = (c.subName || c.name).toLowerCase();
-          return n.includes('lớp') || n.includes('họ tên') || n.includes('đơn vị') || n.includes('tên');
-        }) ||
-        nonSttCols[0] ||
-        current.columns[0];
-
-      let targetIndex = -1;
-
-      // Smart matching by identifier column value (e.g. "1A1", "1/1", "Lớp 1A1")
-      if (idCol && submittedRow[idCol.id] !== undefined && String(submittedRow[idCol.id]).trim() !== '') {
-        const normalizeStr = (s: string) => String(s).trim().toLowerCase().replace(/^lớp\s+/i, '').replace(/\s+/g, '');
-        const targetVal = normalizeStr(String(submittedRow[idCol.id]));
-
-        targetIndex = updatedRows.findIndex((r) => {
-          const rowVal = r[idCol.id] !== undefined && r[idCol.id] !== null ? normalizeStr(String(r[idCol.id])) : '';
-          return rowVal === targetVal && targetVal !== '';
-        });
-      }
-
-      // Secondary fallback search by row id
-      if (targetIndex === -1 && submittedRow.id && !submittedRow.id.startsWith('new_row_')) {
-        targetIndex = updatedRows.findIndex((r) => r.id === submittedRow.id);
-      }
-
-      if (targetIndex >= 0) {
-        // Update existing row safely in place without losing existing fields
-        updatedRows[targetIndex] = {
-          ...updatedRows[targetIndex],
-          ...submittedRow,
-          _submittedAt: nowIso,
-          _submittedBy: submitterName || updatedRows[targetIndex]._submittedBy || 'Giáo viên',
-          _isComplete: true
-        };
-      } else {
-        // Append as new row
-        const newId = `row_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        updatedRows.push({
-          ...submittedRow,
-          id: submittedRow.id && !submittedRow.id.startsWith('new_row_') ? submittedRow.id : newId,
-          _submittedAt: nowIso,
-          _submittedBy: submitterName || 'Giáo viên',
-          _isComplete: true
-        });
-      }
-
-      // Auto-compute sequential STT for all rows if STT column exists
-      if (sttCol) {
-        updatedRows.forEach((r, idx) => {
-          r[sttCol.id] = idx + 1;
-        });
-      }
-
-      const finalReport: UrgentReportItem = {
-        ...current,
-        rows: updatedRows,
-        submissionsCount: updatedRows.filter((r) => r._isComplete).length,
-        updatedAt: nowIso
-      };
-
+      const finalReport = applyReportRowLocally(current, submittedRow, submitterName);
       const cleanData = sanitizeFirestoreData(finalReport);
       transaction.set(docRef, cleanData);
 
@@ -1193,7 +1241,19 @@ export async function submitReportRowToFirestore(
 
     return { success: true, report: updatedReport };
   } catch (err: any) {
-    console.error('submitReportRowToFirestore transaction error:', err);
+    checkAndMarkQuotaExceeded(err);
+    console.warn('submitReportRowToFirestore online transaction notice:', err?.message || err);
+
+    // Fallback gracefully on quota/network error so user input is never lost
+    const current = await fetchUrgentReportFromFirestore(reportId);
+    if (current) {
+      const updatedLocal = applyReportRowLocally(current, submittedRow, submitterName);
+      try {
+        localStorage.setItem(`${URGENT_REPORT_CACHE_PREFIX}${reportId}`, JSON.stringify(updatedLocal));
+      } catch (e) {}
+      return { success: true, report: updatedLocal };
+    }
+
     return { success: false, error: err?.message || 'Lỗi khi gửi số liệu báo cáo.' };
   }
 }
