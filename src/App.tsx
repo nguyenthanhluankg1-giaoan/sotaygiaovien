@@ -1000,6 +1000,14 @@ export default function App() {
               state={state}
               onUpdateState={handleUpdateState}
               currentUser={currentUser}
+              onOpenCollabSheet={(sheetId) => {
+                setCollabSheetId(sheetId);
+                try {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('excelId', sheetId);
+                  window.history.pushState({}, '', url.pathname + url.search);
+                } catch {}
+              }}
             />
           )}
         </main>

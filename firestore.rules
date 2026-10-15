@@ -70,6 +70,14 @@ service cloud.firestore {
       }
     }
 
+    // Collaborative spreadsheets collection
+    match /collab_sheets/{sheetId} {
+      allow read, write: if true;
+      match /{allSubpaths=**} {
+        allow read, write: if true;
+      }
+    }
+
     // Test connection collection
     match /test/{docId} {
       allow read, write: if true;

@@ -60,7 +60,8 @@ import {
   deleteMultipleUrgentReportsFromFirestore,
   deleteReportRowFromFirestore,
   submitReportRowToFirestore,
-  saveCollabWorkbookToFirestore
+  saveCollabWorkbookToFirestore,
+  fetchAllCollabWorkbooksFromFirestore
 } from '../services/dbService';
 import {
   parseExcelSheetWithMerges,
@@ -73,12 +74,14 @@ interface ReportsModuleProps {
   state: AppState;
   onUpdateState: (updater: (prev: AppState) => AppState, immediateSave?: boolean) => void;
   currentUser?: UserAccount | null;
+  onOpenCollabSheet?: (sheetId: string) => void;
 }
 
 export const ReportsModule: React.FC<ReportsModuleProps> = ({
   state,
   onUpdateState,
-  currentUser
+  currentUser,
+  onOpenCollabSheet
 }) => {
   const [selectedReportId, setSelectedReportId] = useState<string>(() => {
     return state.urgentReports && state.urgentReports.length > 0 ? state.urgentReports[0].id : '';
@@ -176,17 +179,121 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
   const [copiedCollabLink, setCopiedCollabLink] = useState<boolean>(false);
   const [copiedCollabMessage, setCopiedCollabMessage] = useState<boolean>(false);
 
-  // Fetch collaborative spreadsheets
+  // Fetch collaborative spreadsheets from both API and Cloud Firestore
   const fetchCollabWorkbooks = async () => {
     setIsLoadingCollab(true);
     try {
-      const res = await fetch('/api/collaborative-sheets');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.workbooks)) {
-          setCollabWorkbooks(data.workbooks);
+      const mergedMap = new Map<string, any>();
+
+      // 1. Try Express API
+      try {
+        const res = await fetch('/api/collaborative-sheets');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.workbooks)) {
+            data.workbooks.forEach((wb: any) => {
+              if (wb.id) mergedMap.set(wb.id, wb);
+            });
+          }
         }
+      } catch (apiErr) {
+        console.warn('Fetch from API /api/collaborative-sheets notice:', apiErr);
       }
+
+      // 2. Fetch directly from Cloud Firestore (guarantees web/production always has all shared workbooks!)
+      try {
+        const firestoreList = await fetchAllCollabWorkbooksFromFirestore();
+        firestoreList.forEach((fwb: any) => {
+          if (!fwb.id) return;
+          const existing = mergedMap.get(fwb.id);
+          const totalRows = fwb.totalRows || (fwb.sheets ? Object.values(fwb.sheets).reduce((sum: number, s: any) => sum + (s?.rows?.length || 0), 0) : 0);
+          const contribCount = fwb.contributorsCount !== undefined ? fwb.contributorsCount : Object.keys(fwb.contributors || {}).length;
+
+          if (!existing) {
+            mergedMap.set(fwb.id, {
+              ...fwb,
+              totalRows,
+              contributorsCount: contribCount,
+              onlineCount: fwb.onlineCount || 0
+            });
+          } else {
+            mergedMap.set(fwb.id, {
+              ...existing,
+              ...fwb,
+              totalRows: Math.max(existing.totalRows || 0, totalRows),
+              contributorsCount: Math.max(existing.contributorsCount || 0, contribCount)
+            });
+          }
+        });
+      } catch (fErr) {
+        console.warn('Fetch collab from Firestore notice:', fErr);
+      }
+
+      // 3. Fallback from localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('collab_sheet_backup_')) {
+              const raw = localStorage.getItem(key);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed.id && !mergedMap.has(parsed.id)) {
+                  mergedMap.set(parsed.id, {
+                    ...parsed,
+                    totalRows: parsed.sheets ? Object.values(parsed.sheets).reduce((sum: number, s: any) => sum + (s?.rows?.length || 0), 0) : 0,
+                    contributorsCount: Object.keys(parsed.contributors || {}).length,
+                    onlineCount: 0
+                  });
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // 4. Merge state.urgentReports so all uploaded reports immediately appear in the collaborative sheets list
+      if (Array.isArray(state?.urgentReports)) {
+        state.urgentReports.forEach((rep) => {
+          if (!rep || !rep.id || mergedMap.has(rep.id)) return;
+          const sName = rep.activeSheetName || 'Sheet1';
+          const headers = (rep.columns || []).map((c) => c.subName || c.name || 'Cột');
+          const rows = (rep.rows || []).map((r, rIdx) => {
+            const rowObj: Record<string, any> = { id: r.id || `row_${rIdx + 1}` };
+            (rep.columns || []).forEach((c, cIdx) => {
+              rowObj[`col_${cIdx}`] = r[c.id] !== undefined ? r[c.id] : (r[`col_${cIdx}`] !== undefined ? r[`col_${cIdx}`] : '');
+            });
+            return { ...r, ...rowObj };
+          });
+
+          mergedMap.set(rep.id, {
+            id: rep.id,
+            title: rep.title,
+            fileName: rep.fileName || `${rep.title}.xlsx`,
+            creatorName: rep.creatorName || 'Giáo viên',
+            createdAt: rep.createdAt || new Date().toISOString(),
+            updatedAt: rep.updatedAt || new Date().toISOString(),
+            activeSheet: sName,
+            sheetNames: [sName],
+            sheets: {
+              [sName]: {
+                name: sName,
+                headers: headers.length > 0 ? headers : ['STT', 'Họ và tên', 'Nội dung', 'Ghi chú'],
+                rows: rows.length > 0 ? rows : Array.from({ length: 20 }, (_, i) => ({ id: `row_${i + 1}`, col_0: String(i + 1) }))
+              }
+            },
+            locks: {},
+            contributors: {},
+            totalRows: rows.length,
+            contributorsCount: rep.submissionsCount || 0,
+            onlineCount: 0
+          });
+        });
+      }
+
+      const list = Array.from(mergedMap.values());
+      list.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+      setCollabWorkbooks(list);
     } catch (e) {
       console.warn('Fetch collab sheets error:', e);
     } finally {
@@ -524,7 +631,11 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
 
   // Open Collaborative Sheet
   const handleOpenCollabSheet = (sheetId: string) => {
-    window.location.href = buildPublicCollabSheetUrl(sheetId);
+    if (onOpenCollabSheet) {
+      onOpenCollabSheet(sheetId);
+    } else {
+      window.location.href = buildPublicCollabSheetUrl(sheetId);
+    }
   };
 
   // Copy Collab Link
@@ -723,6 +834,38 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     // Save to Firestore & local state
     try {
       await saveUrgentReportToFirestore(newReport);
+
+      // Also persist to collaborative spreadsheet format so it immediately shows up in "Bảng Tính Đã Chia Sẻ"
+      const sName = newReport.activeSheetName || 'Sheet1';
+      const headers = (newReport.columns || []).map((c) => c.subName || c.name || 'Cột');
+      const rows = (newReport.rows || []).map((r, rIdx) => {
+        const rowObj: Record<string, any> = { id: r.id || `row_${rIdx + 1}` };
+        (newReport.columns || []).forEach((c, cIdx) => {
+          rowObj[`col_${cIdx}`] = r[c.id] !== undefined ? r[c.id] : '';
+        });
+        return { ...r, ...rowObj };
+      });
+      const collabData = {
+        id: newReport.id,
+        title: newReport.title,
+        fileName: newReport.fileName || `${newReport.title}.xlsx`,
+        creatorName: currentUser?.name || 'Giáo viên',
+        createdAt: newReport.createdAt,
+        updatedAt: newReport.updatedAt,
+        activeSheet: sName,
+        sheetNames: [sName],
+        sheets: {
+          [sName]: {
+            name: sName,
+            headers: headers.length > 0 ? headers : ['STT', 'Họ và tên', 'Nội dung', 'Ghi chú'],
+            rows
+          }
+        },
+        locks: {},
+        contributors: {}
+      };
+      await saveCollabWorkbookToFirestore(collabData);
+      fetchCollabWorkbooks();
     } catch (saveErr) {
       console.warn('Notice saving report to Firestore:', saveErr);
     }
@@ -1730,6 +1873,17 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                         <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
                       )}
                       <span>📁 Chia Sẻ Toàn Bộ Sheet Excel</span>
+                    </button>
+
+                    {/* Direct View / Collaborate on Web Spreadsheet */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCollabSheet(currentReport.id)}
+                      className="px-3.5 py-2 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                      title="Mở trực tiếp bảng tính Excel cộng tác trên web để theo dõi số người nhập và xem dữ liệu"
+                    >
+                      <Eye className="w-4 h-4 text-indigo-600" />
+                      <span>👁️ Xem Trực Tiếp Bảng Tính Web</span>
                     </button>
 
                     {/* Open Dynamic Form Modal */}

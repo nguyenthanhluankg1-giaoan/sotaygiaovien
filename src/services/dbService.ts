@@ -1259,17 +1259,26 @@ export async function submitReportRowToFirestore(
 }
 
 /**
- * Save collaborative multi-sheet workbook to Firestore as a secondary persistent backup
+ * Save collaborative multi-sheet workbook to Firestore as primary cloud persistent store
  */
 export async function saveCollabWorkbookToFirestore(workbook: any): Promise<boolean> {
   if (!workbook || !workbook.id) return false;
   try {
-    const docRef = doc(db, 'urgent_reports', workbook.id);
     const cleanData = sanitizeFirestoreData({
       ...workbook,
       _isCollabWorkbook: true
     });
-    await setDoc(docRef, cleanData);
+
+    // Save to collab_sheets collection
+    const docCollab = doc(db, 'collab_sheets', workbook.id);
+    await setDoc(docCollab, cleanData);
+
+    // Mirror to urgent_reports collection
+    try {
+      const docUrgent = doc(db, 'urgent_reports', workbook.id);
+      await setDoc(docUrgent, cleanData);
+    } catch {}
+
     return true;
   } catch (e) {
     console.warn('saveCollabWorkbookToFirestore notice:', e);
@@ -1278,18 +1287,231 @@ export async function saveCollabWorkbookToFirestore(workbook: any): Promise<bool
 }
 
 /**
+ * Helper to adapt any urgent report into a collaborative workbook format
+ */
+export function adaptUrgentReportToCollabWorkbook(data: any): any {
+  if (!data) return null;
+  if (data.sheets && typeof data.sheets === 'object' && Object.keys(data.sheets).length > 0) {
+    const sNames = Array.isArray(data.sheetNames) && data.sheetNames.length > 0
+      ? data.sheetNames
+      : Object.keys(data.sheets);
+    return {
+      ...data,
+      activeSheet: data.activeSheet || sNames[0] || 'Sheet1',
+      sheetNames: sNames
+    };
+  }
+
+  const sName = data.activeSheetName || 'Sheet1';
+  const headers = Array.isArray(data.columns) && data.columns.length > 0
+    ? data.columns.map((c: any) => c.subName || c.name || 'Cột')
+    : ['STT', 'Họ và tên', 'Nội dung', 'Ghi chú'];
+
+  const rows = Array.isArray(data.rows) && data.rows.length > 0
+    ? data.rows.map((r: any, rIdx: number) => {
+        const rowObj: Record<string, any> = { id: r.id || `row_${rIdx + 1}` };
+        if (Array.isArray(data.columns)) {
+          data.columns.forEach((c: any, cIdx: number) => {
+            rowObj[`col_${cIdx}`] = r[c.id] !== undefined ? r[c.id] : (r[`col_${cIdx}`] !== undefined ? r[`col_${cIdx}`] : '');
+          });
+        }
+        return { ...r, ...rowObj };
+      })
+    : Array.from({ length: 20 }, (_, i) => ({ id: `row_${i + 1}`, col_0: String(i + 1) }));
+
+  return {
+    ...data,
+    id: data.id,
+    title: data.title || 'Bảng tính Excel',
+    fileName: data.fileName || `${data.title || 'Bao_Cao'}.xlsx`,
+    creatorName: data.creatorName || 'Giáo viên',
+    createdAt: data.createdAt || new Date().toISOString(),
+    updatedAt: data.updatedAt || new Date().toISOString(),
+    activeSheet: sName,
+    sheetNames: [sName],
+    sheets: {
+      [sName]: {
+        name: sName,
+        headers,
+        rows
+      }
+    },
+    locks: data.locks || {},
+    contributors: data.contributors || {},
+    totalRows: rows.length,
+    contributorsCount: data.submissionsCount || 0
+  };
+}
+
+/**
  * Fetch collaborative multi-sheet workbook from Firestore if backend endpoint is unavailable
  */
 export async function fetchCollabWorkbookFromFirestore(id: string): Promise<any | null> {
   if (!id) return null;
   try {
-    const docRef = doc(db, 'urgent_reports', id);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      return snap.data();
+    // 1. Try collab_sheets collection
+    const docCollab = doc(db, 'collab_sheets', id);
+    const snapCollab = await getDoc(docCollab);
+    if (snapCollab.exists()) {
+      return adaptUrgentReportToCollabWorkbook(snapCollab.data());
+    }
+
+    // 2. Try urgent_reports collection
+    const docUrgent = doc(db, 'urgent_reports', id);
+    const snapUrgent = await getDoc(docUrgent);
+    if (snapUrgent.exists()) {
+      return adaptUrgentReportToCollabWorkbook(snapUrgent.data());
     }
   } catch (e) {
     console.warn('fetchCollabWorkbookFromFirestore notice:', e);
   }
   return null;
+}
+
+/**
+ * Fetch all collaborative workbooks across Firestore (collab_sheets + urgent_reports)
+ */
+export async function fetchAllCollabWorkbooksFromFirestore(): Promise<any[]> {
+  try {
+    const list: any[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Fetch from collab_sheets
+    try {
+      const qCollab = collection(db, 'collab_sheets');
+      const snapCollab = await getDocs(qCollab);
+      snapCollab.forEach((d) => {
+        const data: any = d.data();
+        if (data && data.id && !seenIds.has(data.id)) {
+          seenIds.add(data.id);
+          list.push(adaptUrgentReportToCollabWorkbook(data));
+        }
+      });
+    } catch (e) {
+      console.warn('Fetch from collab_sheets notice:', e);
+    }
+
+    // 2. Fetch from urgent_reports with automatic conversion
+    try {
+      const qUrgent = collection(db, 'urgent_reports');
+      const snapUrgent = await getDocs(qUrgent);
+      snapUrgent.forEach((d) => {
+        const data: any = d.data();
+        if (data && data.id && !seenIds.has(data.id)) {
+          seenIds.add(data.id);
+          list.push(adaptUrgentReportToCollabWorkbook(data));
+        }
+      });
+    } catch (e) {
+      console.warn('Fetch from urgent_reports for collab notice:', e);
+    }
+
+    return list;
+  } catch (err) {
+    console.warn('fetchAllCollabWorkbooksFromFirestore error:', err);
+    return [];
+  }
+}
+
+/**
+ * Real-time listener for a collaborative workbook
+ */
+export function subscribeToCollabWorkbook(workbookId: string, onUpdate: (wb: any) => void): () => void {
+  if (!workbookId) return () => {};
+  try {
+    const docRef = doc(db, 'collab_sheets', workbookId);
+    const unsub = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        onUpdate(snap.data());
+      }
+    }, (err) => {
+      console.warn('subscribeToCollabWorkbook notice:', err);
+    });
+    return unsub;
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * Update single cell directly in Firestore for real-time cloud collaboration
+ */
+export async function saveCollabWorkbookCellToFirestore(
+  workbookId: string,
+  sheet: string,
+  rowIndex: number,
+  col: string,
+  value: any,
+  clientId: string,
+  clientName: string
+): Promise<boolean> {
+  if (!workbookId || !sheet || rowIndex === undefined || !col) return false;
+  try {
+    const docRef = doc(db, 'collab_sheets', workbookId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      // Check in urgent_reports
+      const urgentRef = doc(db, 'urgent_reports', workbookId);
+      const urgentSnap = await getDoc(urgentRef);
+      if (!urgentSnap.exists()) return false;
+      const wb = urgentSnap.data();
+      applyCellAndSave(wb, docRef, urgentRef);
+      return true;
+    }
+
+    const wb = snap.data();
+    const urgentRef = doc(db, 'urgent_reports', workbookId);
+    await applyCellAndSave(wb, docRef, urgentRef);
+    return true;
+  } catch (err) {
+    console.warn('saveCollabWorkbookCellToFirestore notice:', err);
+    return false;
+  }
+
+  async function applyCellAndSave(wb: any, ref1: any, ref2: any) {
+    if (!wb.sheets || !wb.sheets[sheet]) return;
+    if (!Array.isArray(wb.sheets[sheet].rows)) {
+      wb.sheets[sheet].rows = [];
+    }
+
+    const nowIso = new Date().toISOString();
+    if (!wb.sheets[sheet].rows[rowIndex]) {
+      wb.sheets[sheet].rows[rowIndex] = { id: `row_${rowIndex + 1}` };
+    }
+    wb.sheets[sheet].rows[rowIndex][col] = value;
+    wb.sheets[sheet].rows[rowIndex]._lastEditedBy = clientName || 'Người dùng';
+    wb.sheets[sheet].rows[rowIndex]._lastEditedAt = nowIso;
+    wb.updatedAt = nowIso;
+
+    // Release cell lock
+    const cellKey = `${sheet}:::${rowIndex}:::${col}`;
+    if (wb.locks && wb.locks[cellKey]) {
+      delete wb.locks[cellKey];
+    }
+
+    // Track contributor
+    if (!wb.contributors) wb.contributors = {};
+    const contribKey = clientId || clientName || 'guest';
+    if (!wb.contributors[contribKey]) {
+      wb.contributors[contribKey] = {
+        id: contribKey,
+        name: clientName || 'Người dùng ẩn danh',
+        firstActive: nowIso,
+        lastActive: nowIso,
+        editsCount: 1
+      };
+    } else {
+      wb.contributors[contribKey].lastActive = nowIso;
+      wb.contributors[contribKey].editsCount = (wb.contributors[contribKey].editsCount || 0) + 1;
+      if (clientName && wb.contributors[contribKey].name !== clientName) {
+        wb.contributors[contribKey].name = clientName;
+      }
+    }
+
+    const clean = sanitizeFirestoreData(wb);
+    await setDoc(ref1, clean);
+    try {
+      await setDoc(ref2, clean);
+    } catch {}
+  }
 }

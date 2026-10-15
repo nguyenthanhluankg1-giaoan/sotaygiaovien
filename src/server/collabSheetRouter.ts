@@ -133,7 +133,7 @@ collabSheetRouter.get('/', (_req: Request, res: Response) => {
       updatedAt: wb.updatedAt,
       sheetNames: wb.sheetNames,
       activeSheet: wb.activeSheet,
-      totalRows: Object.values(wb.sheets).reduce((sum, s) => sum + (s.rows?.length || 0), 0),
+      totalRows: wb.sheets ? Object.values(wb.sheets).reduce((sum, s: any) => sum + (s?.rows?.length || 0), 0) : 0,
       contributorsCount: contributors.length,
       contributorsList: contributors,
       onlineCount: clients ? clients.size : 0

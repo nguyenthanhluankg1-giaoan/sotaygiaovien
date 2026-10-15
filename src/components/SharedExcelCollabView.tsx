@@ -30,7 +30,13 @@ import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import { CollabSheetData, CollabSheetCellLock, CollabContributor } from '../server/collabSheetRouter';
 import { buildPublicCollabSheetUrl } from '../utils/urlHelper';
-import { fetchCollabWorkbookFromFirestore, saveCollabWorkbookToFirestore } from '../services/dbService';
+import {
+  fetchCollabWorkbookFromFirestore,
+  saveCollabWorkbookToFirestore,
+  subscribeToCollabWorkbook,
+  saveCollabWorkbookCellToFirestore,
+  adaptUrgentReportToCollabWorkbook
+} from '../services/dbService';
 
 interface SharedExcelCollabViewProps {
   sheetId: string;
@@ -88,66 +94,98 @@ export const SharedExcelCollabView: React.FC<SharedExcelCollabViewProps> = ({
   // Broadcast channel for multi-tab local peer sync
   const channelRef = useRef<BroadcastChannel | null>(null);
 
-  // Load workbook data
+  // Load workbook data from API, Cloud Firestore, or local backup
   const fetchWorkbook = async () => {
     try {
       const res = await fetch(`/api/collaborative-sheets/${sheetId}`);
-      if (!res.ok) {
-        throw new Error('Không thể tải bảng tính từ máy chủ.');
-      }
-      const data = await res.json();
-      if (data.success && data.workbook) {
-        setWorkbook(data.workbook);
-        setActiveSheet((prev) => prev || data.workbook.activeSheet || data.workbook.sheetNames[0] || '');
-        if (data.workbook.locks) {
-          setActiveLocks(data.workbook.locks);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.workbook) {
+          applyWorkbookData(data.workbook);
+          setErrorMsg('');
+          setLoading(false);
+          return;
         }
-        if (data.workbook.contributors) {
-          setContributors(data.workbook.contributors);
-        }
-        setErrorMsg('');
-      } else {
-        throw new Error(data.error || 'Lỗi không xác định khi nạp dữ liệu.');
       }
+      throw new Error('Không tìm thấy trên server');
     } catch (err: any) {
       console.warn('Fetch workbook from server error, attempting Firestore and localStorage fallbacks:', err);
-      // 1. Fallback check from Firestore
+
+      // 1. Fallback check from Cloud Firestore (auto-adapts urgent_reports too)
       try {
         const firestoreWb = await fetchCollabWorkbookFromFirestore(sheetId);
-        if (firestoreWb && firestoreWb.sheets) {
-          setWorkbook(firestoreWb);
-          setActiveSheet((prev) => prev || firestoreWb.activeSheet || firestoreWb.sheetNames?.[0] || '');
-          if (firestoreWb.locks) setActiveLocks(firestoreWb.locks);
-          if (firestoreWb.contributors) setContributors(firestoreWb.contributors);
+        if (firestoreWb) {
+          applyWorkbookData(firestoreWb);
           setErrorMsg('');
+          setLoading(false);
           return;
         }
       } catch (fErr) {
         console.warn('Firestore fallback notice:', fErr);
       }
 
-      // 2. Fallback check in localStorage if server is unreachable
+      // 2. Fallback check in localStorage: collab_sheet_backup_ or urgent_report_cache_
       try {
-        const raw = localStorage.getItem(`collab_sheet_backup_${sheetId}`);
+        const raw = localStorage.getItem(`collab_sheet_backup_${sheetId}`) || localStorage.getItem(`urgent_report_cache_${sheetId}`);
         if (raw) {
           const parsed = JSON.parse(raw);
-          setWorkbook(parsed);
-          setActiveSheet((prev) => prev || parsed.activeSheet || parsed.sheetNames?.[0] || '');
-          if (parsed.contributors) {
-            setContributors(parsed.contributors);
-          }
+          applyWorkbookData(parsed);
           setErrorMsg('');
+          setLoading(false);
           return;
         }
       } catch (e) {}
-      setErrorMsg(err.message || 'Không thể kết nối đến bảng tính.');
+
+      setErrorMsg('Không tìm thấy hoặc không thể kết nối đến Bảng tính Excel này.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Helper to safely apply workbook structure with automatic adaptation
+  const applyWorkbookData = (wbRaw: any) => {
+    if (!wbRaw) return;
+    const wb = adaptUrgentReportToCollabWorkbook(wbRaw);
+    if (!wb || !wb.sheets) return;
+
+    const availableSheetNames = Array.isArray(wb.sheetNames) && wb.sheetNames.length > 0
+      ? wb.sheetNames
+      : Object.keys(wb.sheets || {});
+
+    const firstValidSheet = (wb.activeSheet && wb.sheets?.[wb.activeSheet])
+      ? wb.activeSheet
+      : availableSheetNames.find((s: string) => wb.sheets?.[s]) || availableSheetNames[0] || Object.keys(wb.sheets || {})[0] || '';
+
+    setWorkbook({
+      ...wb,
+      sheetNames: availableSheetNames
+    });
+
+    setActiveSheet((prev) => (prev && wb.sheets?.[prev]) ? prev : firstValidSheet);
+
+    if (wb.locks) {
+      setActiveLocks(wb.locks);
+    }
+    if (wb.contributors) {
+      setContributors(wb.contributors);
+    }
+  };
+
   useEffect(() => {
     fetchWorkbook();
+  }, [sheetId]);
+
+  // Real-time synchronization via Cloud Firestore
+  useEffect(() => {
+    if (!sheetId) return;
+    const unsub = subscribeToCollabWorkbook(sheetId, (remoteWb) => {
+      if (remoteWb && remoteWb.sheets) {
+        applyWorkbookData(remoteWb);
+        setErrorMsg('');
+        setLoading(false);
+      }
+    });
+    return () => unsub();
   }, [sheetId]);
 
   // Setup SSE stream for real-time live locks, presence and contributor updates
@@ -292,8 +330,14 @@ export const SharedExcelCollabView: React.FC<SharedExcelCollabViewProps> = ({
 
   // Current sheet data
   const currentSheetData = useMemo(() => {
-    if (!workbook || !activeSheet || !workbook.sheets[activeSheet]) return null;
-    return workbook.sheets[activeSheet];
+    if (!workbook || !workbook.sheets) return null;
+    if (activeSheet && workbook.sheets[activeSheet]) return workbook.sheets[activeSheet];
+    const sheetKeys = Object.keys(workbook.sheets);
+    if (sheetKeys.length === 0) return null;
+    const match = sheetKeys.find(
+      (k) => k.trim().toLowerCase() === (activeSheet || '').trim().toLowerCase()
+    ) || sheetKeys[0];
+    return workbook.sheets[match] || null;
   }, [workbook, activeSheet]);
 
   // Filtered rows based on search and optional contributor filter
@@ -453,8 +497,22 @@ export const SharedExcelCollabView: React.FC<SharedExcelCollabViewProps> = ({
 
     setEditingCell(null);
 
-    // Send update to server
+    // Send update to server and Cloud Firestore
     try {
+      // 1. Save directly to Cloud Firestore so all web users and devices immediately get the update
+      saveCollabWorkbookCellToFirestore(
+        sheetId,
+        sheet,
+        row,
+        col,
+        newVal,
+        clientId,
+        clientName
+      ).catch((fErr) => {
+        console.warn('Firestore cell update notice:', fErr);
+      });
+
+      // 2. Also send to Express API for SSE broadcast and local disk backup
       await fetch(`/api/collaborative-sheets/${sheetId}/cell`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -466,7 +524,7 @@ export const SharedExcelCollabView: React.FC<SharedExcelCollabViewProps> = ({
           clientId,
           clientName
         })
-      });
+      }).catch((e) => console.warn('Server API cell update notice:', e));
 
       // Broadcast to local channel
       channelRef.current?.postMessage({
