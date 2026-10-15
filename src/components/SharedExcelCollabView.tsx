@@ -30,6 +30,7 @@ import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import { CollabSheetData, CollabSheetCellLock, CollabContributor } from '../server/collabSheetRouter';
 import { buildPublicCollabSheetUrl } from '../utils/urlHelper';
+import { fetchCollabWorkbookFromFirestore, saveCollabWorkbookToFirestore } from '../services/dbService';
 
 interface SharedExcelCollabViewProps {
   sheetId: string;
@@ -109,14 +110,29 @@ export const SharedExcelCollabView: React.FC<SharedExcelCollabViewProps> = ({
         throw new Error(data.error || 'Lỗi không xác định khi nạp dữ liệu.');
       }
     } catch (err: any) {
-      console.warn('Fetch workbook error:', err);
-      // Fallback check in localStorage if server is unreachable
+      console.warn('Fetch workbook from server error, attempting Firestore and localStorage fallbacks:', err);
+      // 1. Fallback check from Firestore
+      try {
+        const firestoreWb = await fetchCollabWorkbookFromFirestore(sheetId);
+        if (firestoreWb && firestoreWb.sheets) {
+          setWorkbook(firestoreWb);
+          setActiveSheet((prev) => prev || firestoreWb.activeSheet || firestoreWb.sheetNames?.[0] || '');
+          if (firestoreWb.locks) setActiveLocks(firestoreWb.locks);
+          if (firestoreWb.contributors) setContributors(firestoreWb.contributors);
+          setErrorMsg('');
+          return;
+        }
+      } catch (fErr) {
+        console.warn('Firestore fallback notice:', fErr);
+      }
+
+      // 2. Fallback check in localStorage if server is unreachable
       try {
         const raw = localStorage.getItem(`collab_sheet_backup_${sheetId}`);
         if (raw) {
           const parsed = JSON.parse(raw);
           setWorkbook(parsed);
-          setActiveSheet((prev) => prev || parsed.activeSheet || parsed.sheetNames[0] || '');
+          setActiveSheet((prev) => prev || parsed.activeSheet || parsed.sheetNames?.[0] || '');
           if (parsed.contributors) {
             setContributors(parsed.contributors);
           }

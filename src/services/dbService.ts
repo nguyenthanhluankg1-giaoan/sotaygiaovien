@@ -1257,3 +1257,39 @@ export async function submitReportRowToFirestore(
     return { success: false, error: err?.message || 'Lỗi khi gửi số liệu báo cáo.' };
   }
 }
+
+/**
+ * Save collaborative multi-sheet workbook to Firestore as a secondary persistent backup
+ */
+export async function saveCollabWorkbookToFirestore(workbook: any): Promise<boolean> {
+  if (!workbook || !workbook.id) return false;
+  try {
+    const docRef = doc(db, 'urgent_reports', workbook.id);
+    const cleanData = sanitizeFirestoreData({
+      ...workbook,
+      _isCollabWorkbook: true
+    });
+    await setDoc(docRef, cleanData);
+    return true;
+  } catch (e) {
+    console.warn('saveCollabWorkbookToFirestore notice:', e);
+    return false;
+  }
+}
+
+/**
+ * Fetch collaborative multi-sheet workbook from Firestore if backend endpoint is unavailable
+ */
+export async function fetchCollabWorkbookFromFirestore(id: string): Promise<any | null> {
+  if (!id) return null;
+  try {
+    const docRef = doc(db, 'urgent_reports', id);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data();
+    }
+  } catch (e) {
+    console.warn('fetchCollabWorkbookFromFirestore notice:', e);
+  }
+  return null;
+}
